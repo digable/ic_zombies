@@ -1,8 +1,14 @@
 {
-  "name": "vc-ic-zombies",
+  "name": "ic-zombies",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
     "mongodb": "^6.5.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

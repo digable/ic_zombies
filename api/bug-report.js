@@ -9,7 +9,7 @@ const gunzipAsync   = promisify(gunzip);
 const { cors, err, send } = require("./_helpers");
 
 const GITHUB_API  = "https://api.github.com";
-const REPO        = "digable/vc_ic_zombies";
+const REPO        = "digable/ic_zombies";
 const MAX_BODY_BYTES = 60 * 1024; // 60 KB compressed payload limit
 
 module.exports = async function handler(req, res) {
