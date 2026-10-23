@@ -1,5 +1,5 @@
-# Deploys Iowa City Quest to digiweb (icrpg.sodamachine.net) on every push to main.
-# Joins Tailscale, then SSHes in with a key that can only run update-icrpg.sh.
+# Deploys IC Zombies to digiweb (zombies.sodamachine.net) on every push to main.
+# Joins Tailscale, then SSHes in with a key that can only run update-zombies.sh.
 name: Deploy
 
 on:
