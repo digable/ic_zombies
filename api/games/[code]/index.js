@@ -1,7 +1,7 @@
 // GET  /api/games/:code  — poll session (state + players + status)
 // POST /api/games/:code  — push updated game state (active player only)
 
-const { getDb } = require("../../_db");
+const { db, getSession } = require("../../_db");
 const { checkRateLimit } = require("../../_rateLimit");
 const { cors, getIp, send, err } = require("../../_helpers");
 
@@ -16,21 +16,16 @@ module.exports = async function handler(req, res) {
   const ip = getIp(req);
 
   try {
-    const db = await getDb();
-    const sessions = db.collection("sessions");
-
     // -------------------------------------------------------------------------
     // GET — poll
     // -------------------------------------------------------------------------
     if (req.method === "GET") {
-      await checkRateLimit(db, ip, "poll", 120, 60);
+      await checkRateLimit(ip, "poll", 120, 60);
 
-      const session = await sessions.findOne(
-        { code },
-        { projection: { hostId: 0, hostIp: 0, createdByIp: 0 } }
-      );
+      const session = await getSession(code);
       if (!session) return err(res, 404, "Game not found");
-      return send(res, 200, session);
+      const { hostId, hostIp, createdByIp, ...publicSession } = session;
+      return send(res, 200, publicSession);
     }
 
     if (req.method !== "POST") return err(res, 405, "Method not allowed");
@@ -38,7 +33,7 @@ module.exports = async function handler(req, res) {
     // -------------------------------------------------------------------------
     // POST — push state (active player only)
     // -------------------------------------------------------------------------
-    await checkRateLimit(db, ip, "push_state", 60, 60);
+    await checkRateLimit(ip, "push_state", 60, 60);
 
     const { playerId, gameState } = req.body || {};
     if (!playerId) return err(res, 400, "playerId is required");
@@ -49,7 +44,7 @@ module.exports = async function handler(req, res) {
       return err(res, 413, "State payload too large");
     }
 
-    const session = await sessions.findOne({ code });
+    const session = await getSession(code);
     if (!session) return err(res, 404, "Game not found");
     if (session.status !== "playing") return err(res, 409, "Game is not in progress");
 
@@ -66,9 +61,9 @@ module.exports = async function handler(req, res) {
       return err(res, 403, "Not your turn");
     }
 
-    await sessions.updateOne(
-      { code },
-      { $set: { state: gameState, lastActivityAt: new Date() } }
+    await db.run(
+      "UPDATE sessions SET state = ?, last_activity_at = ? WHERE code = ?",
+      [stateJson, Date.now(), code]
     );
     return send(res, 200, { ok: true });
 

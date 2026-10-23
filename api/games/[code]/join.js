@@ -1,6 +1,6 @@
 // POST /api/games/:code/join
 
-const { getDb } = require("../../_db");
+const { db, getSession } = require("../../_db");
 const { checkRateLimit } = require("../../_rateLimit");
 const { cors, getIp, send, err } = require("../../_helpers");
 const { randomUUID } = require("crypto");
@@ -18,8 +18,7 @@ module.exports = async function handler(req, res) {
   const ip = getIp(req);
 
   try {
-    const db = await getDb();
-    await checkRateLimit(db, ip, "join", 50, 3600);
+    await checkRateLimit(ip, "join", 50, 3600);
 
     const { displayName, deviceId } = req.body || {};
     if (!displayName || typeof displayName !== "string") {
@@ -28,29 +27,32 @@ module.exports = async function handler(req, res) {
     const name = displayName.trim().slice(0, MAX_NAME_LEN);
     if (!name) return err(res, 400, "displayName cannot be empty");
 
-    const session = await db.collection("sessions").findOne({ code });
-    if (!session) return err(res, 404, "Game not found");
-    if (session.status === "done") return err(res, 409, "Game has ended");
+    const result = await db.transaction(async (q) => {
+      const session = await getSession(code, q);
+      if (!session) return { status: 404, error: "Game not found" };
+      if (session.status === "done") return { status: 409, error: "Game has ended" };
 
-    // Always allow rejoin by deviceId regardless of status
-    const existingPlayer = session.players.find((p) => p.deviceId === deviceId);
-    if (existingPlayer) {
-      return send(res, 200, { playerId: existingPlayer.id, rejoined: true, status: session.status });
-    }
-
-    // New player — only allowed while in lobby
-    if (session.status !== "lobby") return err(res, 409, "Game already started — ask the host to create a new game");
-    if (session.players.length >= MAX_PLAYERS) return err(res, 409, "Lobby is full");
-
-    const playerId = randomUUID();
-    await db.collection("sessions").updateOne(
-      { code },
-      {
-        $push: { players: { id: playerId, name, deviceId: deviceId || null } },
-        $set: { lastActivityAt: new Date() }
+      // Always allow rejoin by deviceId regardless of status
+      const existingPlayer = session.players.find((p) => p.deviceId === deviceId);
+      if (existingPlayer) {
+        return { body: { playerId: existingPlayer.id, rejoined: true, status: session.status } };
       }
-    );
-    return send(res, 200, { playerId });
+
+      // New player — only allowed while in lobby
+      if (session.status !== "lobby") return { status: 409, error: "Game already started — ask the host to create a new game" };
+      if (session.players.length >= MAX_PLAYERS) return { status: 409, error: "Lobby is full" };
+
+      const playerId = randomUUID();
+      const players = [...session.players, { id: playerId, name, deviceId: deviceId || null }];
+      await q.run(
+        "UPDATE sessions SET players = ?, last_activity_at = ? WHERE code = ?",
+        [JSON.stringify(players), Date.now(), code]
+      );
+      return { body: { playerId } };
+    });
+
+    if (result.error) return err(res, result.status, result.error);
+    return send(res, 200, result.body);
   } catch (e) {
     if (e.status === 429) return err(res, 429, e.message, { retryAfter: e.retryAfter });
     console.error(`POST /api/games/${code}/join`, e);

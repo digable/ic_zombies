@@ -1,8 +1,6 @@
 // Shared request/response helpers
 
-const ALLOWED_ORIGIN = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "*"; // dev fallback
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);

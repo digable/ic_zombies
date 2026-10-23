@@ -5,7 +5,7 @@ A browser-based board game adaptation of zombie survival. Draw tiles to build th
 [![Play Now](https://img.shields.io/badge/Play%20Now-digable.github.io-orange)](https://digable.github.io/vc_ic_zombies/)
 ![Build](https://img.shields.io/badge/Build-None%20Required-brightgreen)
 
-**[▶ Play in your browser](https://vc-ic-zombies.vercel.app/)** — or clone and open `index.html` locally. No server or build step required.
+Clone and open `index.html` locally for single-device play — no build step required. For online multiplayer and bug reports, run `npm start` to launch the self-hosted server (needs the `sqlite3` module or Node 22.13+).
 
 ---
 
@@ -106,12 +106,12 @@ vc_ic_zombies/
 ├── README.md                         # This file
 ├── LICENSE                           # MIT License
 ├── RULES_REFERENCE.md                # Official Zombies!!! rules & FAQ summary
-├── vercel.json                       # Vercel deployment config
-├── package.json                      # Node dependencies (mongodb)
+├── package.json                      # npm start script
+├── server.js                         # Self-hosting server: static files + /api routes
 ├── api/
-│   ├── _db.js                        # Shared MongoDB Atlas connection
+│   ├── _db.js                        # SQLite connection, schema (sessions, rate_limit_hits), query queue
 │   ├── _helpers.js                   # CORS, error helpers, code generator
-│   ├── _rateLimit.js                 # Per-IP rate limiting (Atlas-backed)
+│   ├── _rateLimit.js                 # Per-IP rate limiting (expiring records)
 │   ├── games.js                      # POST /api/games — create session
 │   ├── bug-report.js                 # POST /api/bug-report — create GitHub issue
 │   └── games/[code]/
@@ -197,7 +197,7 @@ vc_ic_zombies/
 - **3×3 subtile grid** — each map tile has a 3×3 movement grid with per-subtile walkability, walls, doors, and air ducts defined in `subTilesTemplate`
 - **Incremental board rendering** — cells are fingerprinted each render; only changed cells rebuild their DOM; global occupant map computed once per render pass; player lookups use a `Map` keyed by id
 - **CSS design tokens** — `base.css` defines all colors, spacing, and player palette as CSS custom properties (`--player-P1`, `--cell-width`, `--wall-thickness`, `--lane-color`, etc.); components reference variables, not raw values
-- **Serverless backend** — Vercel functions + MongoDB Atlas for multiplayer sessions and bug reports; polling-based sync (no WebSockets); rate-limited per IP via Atlas TTL collections
+- **Self-hosted backend** — `server.js` (Node built-ins only) serves the game and `/api` routes; SQLite (`data/game.db`) for multiplayer sessions and bug reports; polling-based sync (no WebSockets); rate-limited per IP via expiring records
 - **Zone isolation** — standalone collection tiles connect only to their own zone except through a gateway tile with a `DISABLE_ON_SOLO` connector; gateway tile unlocks the standalone deck when placed
 - **Connector rule system** — per-connector placement rules on each tile: `SAME` (same collection), `ANY` (any tile), `ONLY` (specific tile name), `DESIGNATED` (requires neighbor to have `ONLY` targeting this tile), and collection-key rules for cross-zone restrictions; bidirectional — both sides of a road connection must agree
 - **Companion tiles** — some tiles auto-place one or more tiles from the deck (or a set-aside reserve) when drawn; companions can be placed with a rotation offset relative to the main tile (e.g. Big Top 2 rotates 180° to connect N-to-N with Big Top 1); `companionOnly: true` tiles are never shuffled into any deck

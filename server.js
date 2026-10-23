@@ -1,10 +1,10 @@
-// Self-hosting server: serves the game files and runs the /api functions
-// the same way Vercel does, using only Node's built-in modules.
+// Self-hosting server: serves the game files and runs the /api handlers,
+// using only Node's built-in modules.
 //
 //   node server.js            (listens on port 3000)
 //   PORT=8080 node server.js
 //
-// Without MONGODB_URI, game data is stored in SQLite at data/game.db (see api/_sqliteStore.js).
+// Game data is stored in SQLite at data/game.db (see api/_db.js).
 
 const http = require("http");
 const fs = require("fs");
@@ -15,7 +15,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const MAX_BODY_BYTES = 1024 * 1024; // game state is capped at 200 KB; this leaves headroom
 
-// URL pattern -> handler file, mirroring Vercel's api/ folder routing
+// URL pattern -> handler file
 const routes = [
   { pattern: /^\/api\/games\/?$/,                     file: "api/games.js" },
   { pattern: /^\/api\/games\/([^/]+)\/?$/,            file: "api/games/[code]/index.js" },
@@ -48,7 +48,7 @@ const MIME = {
 // Never served as static files
 const BLOCKED = /^\/(api|data|node_modules)(\/|$)|\/\.|^\/(server\.js|package(-lock)?\.json)$/;
 
-// Add the Express/Vercel-style helpers the handlers expect
+// Add the Express-style helpers the handlers expect
 function decorate(res) {
   res.status = (code) => { res.statusCode = code; return res; };
   res.json = (body) => {
@@ -121,7 +121,7 @@ function serveStatic(req, res, url) {
       "Content-Type": MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream",
       "Content-Length": stat.size
     };
-    // Same as vercel.json: always fetch fresh game scripts
+    // Always fetch fresh game scripts
     if (pathname.startsWith("/scripts/")) headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
     res.writeHead(200, headers);
     if (req.method === "HEAD") return res.end();
@@ -143,8 +143,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  const store = process.env.MONGODB_URI
-    ? "MongoDB"
-    : `SQLite (${process.env.DB_FILE || "data/game.db"})`;
-  console.log(`VC IC Zombies running at http://${HOST}:${PORT} using ${store}`);
+  const dbFile = process.env.DB_FILE || "data/game.db";
+  console.log(`VC IC Zombies running at http://${HOST}:${PORT} using SQLite (${dbFile})`);
 });
