@@ -144,5 +144,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   const dbFile = process.env.DB_FILE || "data/game.db";
-  console.log(`VC IC Zombies running at http://${HOST}:${PORT} using SQLite (${dbFile})`);
+  console.log(`IC Zombies running at http://${HOST}:${PORT} using SQLite (${dbFile})`);
 });

@@ -6,8 +6,22 @@
 // Save is blocked while any pending state is active (those have closures).
 // ---------------------------------------------------------------------------
 
-const SAVE_KEY  = (slot) => `vc_ic_save_${slot}`;
-const META_KEY  = (slot) => `vc_ic_meta_${slot}`;
+const SAVE_KEY  = (slot) => `ic_save_${slot}`;
+const META_KEY  = (slot) => `ic_meta_${slot}`;
+
+// One-time move of saves made under the old "VC IC Zombies" key names
+(function migrateLegacySaveKeys() {
+  try {
+    for (let slot = 0; slot < SAVE_SLOTS; slot++) {
+      for (const [oldKey, newKey] of [[`vc_ic_save_${slot}`, SAVE_KEY(slot)], [`vc_ic_meta_${slot}`, META_KEY(slot)]]) {
+        const value = localStorage.getItem(oldKey);
+        if (value === null) continue;
+        if (localStorage.getItem(newKey) === null) localStorage.setItem(newKey, value);
+        localStorage.removeItem(oldKey);
+      }
+    }
+  } catch { /* storage unavailable — nothing to migrate */ }
+})();
 
 function getAllEventCardDefs() {
   const all = [];

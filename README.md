@@ -1,11 +1,11 @@
-# VC IC Zombies
+# IC Zombies
 
 A browser-based board game adaptation of zombie survival. Draw tiles to build the city, fight zombies, scavenge loot, and reach the Helipad — or rack up 25 kills before anyone else does.
 
-[![Play Now](https://img.shields.io/badge/Play%20Now-digable.github.io-orange)](https://digable.github.io/vc_ic_zombies/)
+[![Play Now](https://img.shields.io/badge/Play%20Now-zombies.sodamachine.net-orange)](https://zombies.sodamachine.net)
 ![Build](https://img.shields.io/badge/Build-None%20Required-brightgreen)
 
-Clone and open `index.html` locally for single-device play — no build step required. For online multiplayer and bug reports, run `npm start` to launch the self-hosted server (needs the `sqlite3` module or Node 22.13+).
+**[▶ Play in your browser](https://zombies.sodamachine.net)** — or clone and open `index.html` locally for single-device play — no build step required. For online multiplayer and bug reports, run `npm start` to launch the self-hosted server (see [Running & Deploying](#running--deploying)).
 
 ---
 
@@ -97,17 +97,49 @@ Clone and open `index.html` locally for single-device play — no build step req
 
 ---
 
+## Running & Deploying
+
+### Local
+
+```
+npm start            # http://localhost:3000
+```
+
+`server.js` uses only Node's built-in modules. SQLite comes from the `sqlite3` module if it's installed (Debian: `sudo apt install node-sqlite3`), otherwise from Node's built-in `node:sqlite` (Node 22.13+). The database is created automatically at `data/game.db`.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `3000` | Listen port |
+| `HOST` | `0.0.0.0` | Listen address |
+| `DB_FILE` | `data/game.db` | SQLite database path |
+| `GITHUB_TOKEN` | — | Needed for in-game bug reports (creates issues on `digable/ic_zombies`) |
+| `ALLOWED_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin` for `/api` |
+
+### Production
+
+The live site, [zombies.sodamachine.net](https://zombies.sodamachine.net), deploys automatically on every push to `main` (or manually through **Actions → Deploy → Run workflow**) via [.github/workflows/deploy.yaml](.github/workflows/deploy.yaml):
+
+1. The GitHub runner joins the Tailscale network.
+2. It SSHes into the host as `deploy`, using a key that can only run `update-zombies.sh`.
+3. `update-zombies.sh` syncs the repo into `/srv/apps/ic_zombies`, keeping the server's `data/` folder (the live database) in place.
+
+Repository secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`.
+
+---
+
 ## Project Structure
 
 ```
-vc_ic_zombies/
+ic_zombies/
 ├── index.html                        # Game UI
 ├── tile-editor.html                  # Tile debug / editor panel
+├── tile-debug.html                   # Redirects to tile-editor.html (old URL)
 ├── README.md                         # This file
 ├── LICENSE                           # MIT License
 ├── RULES_REFERENCE.md                # Official Zombies!!! rules & FAQ summary
 ├── package.json                      # npm start script
 ├── server.js                         # Self-hosting server: static files + /api routes
+├── .github/workflows/deploy.yaml     # Deploys to zombies.sodamachine.net on push to main
 ├── api/
 │   ├── _db.js                        # SQLite connection, schema (sessions, rate_limit_hits), query queue
 │   ├── _helpers.js                   # CORS, error helpers, code generator
@@ -167,6 +199,7 @@ vc_ic_zombies/
 │       │   └── special.js            # specialTiles  — win/start tiles (Helipad variants)
 │       ├── map-deck.js               # buildMapDeck(), buildStartTile(), tile filtering/shuffling
 │       ├── event-deck.js             # Event deck builder
+│       ├── sprites.js                # Pixel-art SVG sprites (players, zombies, tiles)
 │       └── event-cards/
 │           ├── helpers.js            # Shared event utilities
 │           ├── player-cards.js       # Player buff/recovery cards (Z1/Z2/Z3)
@@ -197,7 +230,7 @@ vc_ic_zombies/
 - **3×3 subtile grid** — each map tile has a 3×3 movement grid with per-subtile walkability, walls, doors, and air ducts defined in `subTilesTemplate`
 - **Incremental board rendering** — cells are fingerprinted each render; only changed cells rebuild their DOM; global occupant map computed once per render pass; player lookups use a `Map` keyed by id
 - **CSS design tokens** — `base.css` defines all colors, spacing, and player palette as CSS custom properties (`--player-P1`, `--cell-width`, `--wall-thickness`, `--lane-color`, etc.); components reference variables, not raw values
-- **Self-hosted backend** — `server.js` (Node built-ins only) serves the game and `/api` routes; SQLite (`data/game.db`) for multiplayer sessions and bug reports; polling-based sync (no WebSockets); rate-limited per IP via expiring records
+- **Self-hosted backend** — `server.js` (Node built-ins only) serves the game and `/api` routes; SQLite (`data/game.db`) for multiplayer sessions; bug reports become GitHub issues; polling-based sync (no WebSockets); rate-limited per IP via expiring records
 - **Zone isolation** — standalone collection tiles connect only to their own zone except through a gateway tile with a `DISABLE_ON_SOLO` connector; gateway tile unlocks the standalone deck when placed
 - **Connector rule system** — per-connector placement rules on each tile: `SAME` (same collection), `ANY` (any tile), `ONLY` (specific tile name), `DESIGNATED` (requires neighbor to have `ONLY` targeting this tile), and collection-key rules for cross-zone restrictions; bidirectional — both sides of a road connection must agree
 - **Companion tiles** — some tiles auto-place one or more tiles from the deck (or a set-aside reserve) when drawn; companions can be placed with a rotation offset relative to the main tile (e.g. Big Top 2 rotates 180° to connect N-to-N with Big Top 1); `companionOnly: true` tiles are never shuffled into any deck
@@ -221,7 +254,7 @@ Fan adaptation of **Zombies!!!** by Twilight Creations, Inc. Consider supporting
 
 ## Thanks
 
-Special thanks to **Chris Troyer** and **Brian Walker** — playtester, great person, and an essential part of making this game better.
+Special thanks to **Chris Troyer** and **Brian Walker** — playtesters, great people, and an essential part of making this game better.
 
 ---
 

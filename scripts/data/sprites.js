@@ -1,5 +1,5 @@
 /**
- * sprites.js — pixel-art SVG sprites for vc_ic_zombies
+ * sprites.js — pixel-art SVG sprites for ic_zombies
  *
  * Drop this file in:  scripts/data/sprites.js
  * Add to index.html BEFORE board.js:
