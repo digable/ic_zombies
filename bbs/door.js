@@ -781,16 +781,17 @@ let flashOn = false;
 let flashTimer = null;
 
 function setFlash(grid, flash) {
-  flashCells = null;
+  flashCells = [];
   flashOn = false;
-  // Skip it if a pop-up box covers that space.
+  // The current player's space: their color behind it. Skipped if a pop-up box covers it.
   if (flash && flash.cells.every((c) => grid[c.y][c.x].ch === c.ch && grid[c.y][c.x].bg === c.bg)) {
-    flashCells = flash.cells.map((c) => {
+    flash.cells.forEach((c) => {
       const off = { ch: c.ch, fg: c.fg, bg: c.bg };
       const fg = (c.fg & 7) === flash.bg || c.ch === "@" ? (flash.bg === C.grey ? C.black : C.white) : c.fg;
-      return { x: c.x, y: c.y, off, on: { ch: c.ch, fg: c.ch === "@" ? C.black : fg, bg: flash.bg } };
+      flashCells.push({ x: c.x, y: c.y, off, on: { ch: c.ch, fg: c.ch === "@" ? C.black : fg, bg: flash.bg } });
     });
   }
+  if (!flashCells.length) flashCells = null;
   if (flashCells && !flashTimer) {
     flashTimer = setInterval(() => {
       if (!flashCells || drawQueued) return;

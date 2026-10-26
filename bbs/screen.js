@@ -212,6 +212,18 @@ function drawMap(grid, game, state, center, extra = {}) {
     }
   }
   drawTileLabels(grid, game, state, sx0, sy0, preview);
+
+  // The outline of the tile being placed: a solid white-on-red frame (no ground on the map is
+  // red, so it stands out next to buildings, water and stores).
+  if (preview) {
+    const left = MAP_X + (preview.x * DIM - sx0) * 4, top = MAP_Y + (preview.y * DIM - sy0) * 2;
+    const right = left + DIM * 4, bottom = top + DIM * 2;
+    const paint = (x, y) => {
+      if (x >= MAP_X && x < MAP_X + MAP_COLS && y >= MAP_Y && y < MAP_Y + MAP_ROWS) { grid[y][x].fg = C.white; grid[y][x].bg = C.red; }
+    };
+    for (let x = left; x <= right; x++) { paint(x, top); paint(x, bottom); }
+    for (let y = top + 1; y < bottom; y++) { paint(left, y); paint(right, y); }
+  }
 }
 
 // Plain road and woods tiles go unlabeled; everything else gets its name in its top wall.

@@ -82,7 +82,7 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 | brown `▒` | building interiors (purple `▒`: mall stores) |
 | yellow `+` in a wall | door |
 | `...` green `░` `:::` | road, grass, parking |
-| yellow walls / `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
+| red outline, yellow walls / grey `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
 | green spaces | spaces a card lets you pick |
 | grey `▓` with an `H` in the middle | the helipad (the way out) |
 | `Θ` | a sewer token (Z6) |
