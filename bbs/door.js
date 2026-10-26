@@ -16,7 +16,7 @@
 const fs = require("fs");
 const path = require("path");
 const { loadEngine } = require("./engine");
-const { buildScreen, buildHelp, buildMenu, wrap, num, C } = require("./screen");
+const { buildScreen, buildHelp, buildMenu, buildPrompt, wrap, num, C } = require("./screen");
 const ansi = require("./ansi");
 const saves = require("./saves");
 
@@ -64,7 +64,7 @@ const userName = bbsUserName();
 const SAVE_DIR = saves.saveDir(val("savedir"));
 
 // ---- door state (only the screen; the game's own state lives in `state`) ------
-let phase = "menu";       // menu | game
+let phase = "menu";       // locked | resume | confirmNew | menu | game
 let mode = "play";        // play | look | card | items | help | deck
 let selected = null;      // { from: "hand" | "items" | "pages", index }
 let cursor = null;        // look mode: board space under the cursor
@@ -103,6 +103,33 @@ function savedGameInfo() {
   const s = saves.readSave(SAVE_DIR, userName);
   if (!s || !s.game) return null;
   return `turn ${s.game.turnNumber}, ${s.game.players.length} player${s.game.players.length > 1 ? "s" : ""}`;
+}
+
+// The "you have a game going" screen shown when a player with a save comes back.
+function resumeScreen() {
+  const s = saves.readSave(SAVE_DIR, userName);
+  const g = s && s.game;
+  if (!g) { phase = "menu"; return buildMenu(menuModel()); }
+  const colls = Object.keys(g.deckFilters || {}).filter((k) => g.deckFilters[k] && g.deckFilters[k].enabled)
+    .map((k) => (COLLECTION_META[k] && COLLECTION_META[k].shortCode) || k);
+  const when = g.savedAt ? new Date(g.savedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
+  const whose = g.players[g.currentPlayerIndex];
+  const lines = [
+    ["You have a game in progress.", C.white],
+    [""],
+    [`Turn ${g.turnNumber}${whose ? `, ${whose.name}'s turn` : ""}`, C.yellow],
+    [`Players: ${g.players.map((pl) => `${pl.name} (${pl.kills} kills)`).join(", ")}`],
+    [`Collections: ${colls.join(" ") || "-"}`],
+    when ? [`Saved ${when}, at the start of that turn.`, C.dgrey] : [""]
+  ];
+  if (phase === "confirmNew") {
+    return buildPrompt({
+      title: "start over?",
+      lines: [["Starting a new game deletes this saved one.", C.bred], ["You can only have one game going at a time."], [""], ...lines.slice(2)],
+      keys: [["y", "yes, delete it and set up a new game"], ["any other key", "go back"]]
+    });
+  }
+  return buildPrompt({ title: "welcome back", lines, keys: [["c", "continue this game"], ["n", "start a new game instead"], ["q", "quit"]] });
 }
 
 function menuModel() {
@@ -183,7 +210,7 @@ function startNewGame() {
   namePlayerOne();
   resetDoor();
   phase = "game";
-  autoSave(true);
+  autoSave();
 }
 
 function continueSavedGame() {
@@ -198,24 +225,29 @@ function continueSavedGame() {
     resetDoor();
     lastSaveSig = saveSig();
     phase = "game";
+    autoSteps = true;
     call("logLine", `Welcome back, ${me().name}. Game loaded.`, "quiet");
   } catch (e) {
     menu.notice = `That save couldn't be loaded (${e.message}).`;
+    phase = "menu";
   }
 }
 
 // ---- saving --------------------------------------------------------------------
-// The game is saved whenever the step changes and nothing is half-done (the same rule the
-// web Save button uses), and once more on quit.
-const saveSig = () => `${state.turnNumber}|${state.currentPlayerIndex}|${state.step}|${state.players.map((p) => `${p.x},${p.y},${p.kills}`).join(";")}`;
-const canSave = () => phase === "game" && state.players.length && !call("hasPendingState") &&
-  !state.pendingDuctChoice && !state.pendingSewerTokenPlace && !state.pendingFrisbeeTarget && !state.zombieAnimationTimer;
+// The game is saved at the start of every turn (each player's turn in hot-seat), before
+// anything has happened in it. If the connection drops or the player quits mid-turn, they
+// come back to the start of that turn. Each user has one save: one game at a time.
+const saveSig = () => `${state.turnNumber}|${state.currentPlayerIndex}`;
+const atTurnStart = () => phase === "game" && state.players.length && state.step === STEP.DRAW_TILE && !state.pendingTile &&
+  !call("hasPendingState") && !state.pendingDuctChoice && !state.pendingSewerTokenPlace && !state.pendingFrisbeeTarget &&
+  !state.zombieAnimationTimer;
 
-function autoSave(force = false) {
-  if (!canSave()) return false;
+function autoSave() {
+  if (phase !== "game") return false;
   if (state.gameOver) { saves.removeSave(SAVE_DIR, userName); return false; }
+  if (!atTurnStart()) return false;
   const sig = saveSig();
-  if (!force && sig === lastSaveSig) return false;
+  if (sig === lastSaveSig) return false;
   lastSaveSig = sig;
   return saves.writeSave(SAVE_DIR, userName, { door: { useDodge: !!state.useDodge }, game: call("serializeState") });
 }
@@ -719,6 +751,19 @@ function keyHints() {
 }
 
 function draw() {
+  if (phase === "locked") {
+    process.stdout.write(ansi.render(buildPrompt({
+      title: "already playing",
+      lines: [["You already have IC Zombies open on another connection.", C.white], [""],
+        ["You can only have one game going at a time. Finish or quit"], ["that one first, then come back."]],
+      keys: [["q", "back to the BBS"]]
+    }), { utf8: UTF8 }));
+    return;
+  }
+  if (phase === "resume" || phase === "confirmNew") {
+    process.stdout.write(ansi.render(resumeScreen(), { utf8: UTF8 }));
+    return;
+  }
   if (phase === "menu") {
     process.stdout.write(ansi.render(buildMenu(menuModel()), { utf8: UTF8 }));
     return;
@@ -740,7 +785,7 @@ function draw() {
   if (spot) {
     extra.center = { x: spot.x * 3 + 1, y: spot.y * 3 + 1 };
     const map = call("getTileSubTileMap", state.pendingTile);
-    extra.preview = { x: spot.x, y: spot.y, subTiles: call("getRotatedSubTiles", map, state.pendingRotation) || {} };
+    extra.preview = { x: spot.x, y: spot.y, tile: state.pendingTile, subTiles: call("getRotatedSubTiles", map, state.pendingRotation) || {} };
     const all = spotsNow();
     extra.spots = all.filter((o) => o.x !== spot.x || o.y !== spot.y).map((o) => `${o.x},${o.y}`);
     const n = all.findIndex((o) => o.x === spot.x && o.y === spot.y) + 1;
@@ -787,7 +832,7 @@ function draw() {
   if (selected && selected.from === "hand" && mode === "card") extra.selectedCard = selected.index;
 
   if (!autoSteps) extra.info.push(["auto steps off (a)", C.dgrey]);
-  if (quitArmed) extra.info.push(["q again: save and quit", C.yellow]);
+  if (quitArmed) extra.info.push(["q again to quit", C.yellow]);
   if (notice) extra.info.push([notice, C.yellow]);
   process.stdout.write(ansi.render(buildScreen(game, extra), { utf8: UTF8 }));
 }
@@ -812,7 +857,6 @@ function handleMenuKey(k) {
   else if (dir === "W" || dir === "S" || k === "-") menu.players = Math.max(1, menu.players - 1);
   else if (/^[1-9]$/.test(k)) menu.players = Math.max(1, Math.min(MAX_PLAYERS, Number(k)));
   else if (isEnter(k)) startNewGame();
-  else if (lower === "c" && savedGameInfo()) continueSavedGame();
   else {
     const v = VARIANTS.find(([letter]) => letter === lower);
     if (v) { menu[v[1]] = !menu[v[1]]; return; }
@@ -822,6 +866,19 @@ function handleMenuKey(k) {
 }
 
 function handleKey(k) {
+  if (phase === "locked") { if (k.toLowerCase() === "q" || isEnter(k) || isEsc(k)) quit(); return; }
+  if (phase === "resume") {
+    const lower = k.toLowerCase();
+    if (lower === "c") continueSavedGame();
+    else if (lower === "n") phase = "confirmNew";
+    else if (lower === "q") quit();
+    return;
+  }
+  if (phase === "confirmNew") {
+    if (k.toLowerCase() === "y") { saves.removeSave(SAVE_DIR, userName); menu.notice = "Saved game deleted."; phase = "menu"; }
+    else phase = "resume";
+    return;
+  }
   if (phase === "menu") return handleMenuKey(k);
   notice = "";
   if (k !== "q" && k !== "Q") quitArmed = false;
@@ -1035,10 +1092,9 @@ function keysFrom(chunk) {
 }
 
 function quit() {
-  const saved = phase === "game" && !state.gameOver && autoSave(true);
-  const kept = phase === "game" && !state.gameOver && !saved && savedGameInfo();
+  const kept = phase === "game" && !state.gameOver && savedGameInfo();
   process.stdout.write(ansi.CLEAR + ansi.SHOW_CURSOR + "Thanks for playing IC Zombies.\r\n" +
-    (saved ? "Your game is saved; pick Continue next time.\r\n" : kept ? "Your game is saved as of the last step you finished.\r\n" : ""));
+    (kept ? `Your game is saved as of the start of turn ${state.turnNumber}; you'll be asked to continue it next time.\r\n` : ""));
   process.exit(0);
 }
 
@@ -1054,13 +1110,21 @@ process.stdin.on("data", (chunk) => {
   }
   scheduleDraw();
 });
-// A dropped connection: save what we can, then go.
-process.stdin.on("end", () => { if (phase === "game") autoSave(true); process.exit(0); });
-process.on("SIGHUP", () => { if (phase === "game") autoSave(true); process.exit(0); });
+// A dropped connection: the save from the start of this turn is already on disk, so just go.
+process.stdin.on("end", () => process.exit(0));
+process.on("SIGHUP", () => process.exit(0));
+process.on("SIGTERM", () => process.exit(0));
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.resume();
 
-if (opt("new")) startNewGame();
+// One game at a time: if this user's game is already open on another node, say so and stop there.
+// Otherwise ask whether to pick up a saved game before showing the new-game screen.
+if (!saves.takeLock(SAVE_DIR, userName)) phase = "locked";
+else {
+  process.on("exit", () => saves.dropLock(SAVE_DIR, userName));
+  if (savedGameInfo()) phase = "resume";
+  else if (opt("new")) startNewGame();
+}
 // Testing only: run a script inside the game (e.g. deal a certain card) before the first draw.
 if (process.env.ICZ_TEST_SETUP) require("vm").runInContext(fs.readFileSync(process.env.ICZ_TEST_SETUP, "utf8"), game.ctx);
 process.stdout.write(ansi.CLEAR);

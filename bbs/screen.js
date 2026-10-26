@@ -197,6 +197,59 @@ function drawMap(grid, game, state, center, extra = {}) {
       }
     }
   }
+  drawTileLabels(grid, game, state, sx0, sy0, preview);
+}
+
+// Plain road and woods tiles go unlabeled; everything else gets its name in its top wall.
+const UNLABELED = new Set(["road", "woods"]);
+const LABEL_MAX = 11;                       // a tile's top wall is 12 cells; leave the corner
+
+// Hand-picked short labels for names that don't shorten well on their own.
+const SHORT = {
+  "Sporting Goods Store": "Sport Goods", "Department Store": "Dept Store", "Appliance Store": "Appliances",
+  "Record Store": "Records", "Top Secret Lab": "Secret Lab", "Medical School": "Med School",
+  "Science Center": "Science Ctr", "Fortune Teller": "Fortune", "Midway Games": "Midway",
+  "School Entrance": "School Door", "Phys Ed Bidg.": "Phys Ed", "Abandoned Cars": "Aband. Cars",
+  "Pet Cemetery": "Pet Cmtry", "The Deadwood": "Deadwood", "Ticket Booth": "Tickets",
+  "College Street": "College St", "Army Surplus": "Surplus"
+};
+
+// Shorten a tile name to fit its top wall: "Police Station" -> "Police Sta".
+function shortName(name) {
+  let n = String(name || "").replace(/\s*\(.*?\)\s*/g, " ").trim();
+  if (SHORT[n]) return SHORT[n];
+  if (n.length <= LABEL_MAX) return n;
+  n = n.replace(/ Store$/, "").replace(/ Shop$/, "");
+  if (n.length <= LABEL_MAX) return n;
+  n = n.replace(/Station/g, "Sta").replace(/Department/g, "Dept").replace(/Building|Bldg\./g, "Bldg")
+    .replace(/Sporting Goods/, "Sports").replace(/ & /g, "&").replace(/Consignment/, "Consign");
+  return n.length <= LABEL_MAX ? n : `${n.slice(0, LABEL_MAX - 1)}.`;
+}
+
+function drawTileLabels(grid, game, state, sx0, sy0, preview) {
+  const DIM = game.get("TILE_DIM");
+  const first = (v) => Math.floor(v / DIM);
+  for (let ty = first(sy0); ty <= first(sy0 + VIEW_H); ty++) {
+    for (let tx = first(sx0); tx <= first(sx0 + VIEW_W); tx++) {
+      const isPreview = preview && preview.x === tx && preview.y === ty;
+      const tile = isPreview ? preview.tile : state.board.get(`${tx},${ty}`);
+      if (!tile || (!isPreview && UNLABELED.has(tile.type))) continue;
+      const label = shortName(game.call("getTileDisplayName", tile));
+      const gy = MAP_Y + (ty * DIM - sy0) * 2;
+      if (gy < MAP_Y || gy >= MAP_Y + MAP_ROWS) continue;
+      // A tile cut off by the edge of the map gets its label slid into the part that shows.
+      let gx = Math.max(MAP_X + (tx * DIM - sx0) * 4 + 1, MAP_X);
+      const end = Math.min(MAP_X + (tx * DIM - sx0) * 4 + 1 + LABEL_MAX, MAP_X + MAP_COLS - 1);
+      if (end - gx < 4) continue;
+      // Write the name along the wall, stepping over doors so they still show.
+      for (const ch of label) {
+        while (gx < end && grid[gy] && grid[gy][gx] && grid[gy][gx].ch === "+") gx++;
+        if (gx >= end) break;
+        put(grid, gx, gy, ch, isPreview ? C.yellow : C.bcyan, C.black);
+        gx++;
+      }
+    }
+  }
 }
 
 
@@ -256,6 +309,8 @@ function drawSidebar(grid, game, state, extra) {
 
   const label = (TRACK.find(([s]) => s === state.step) || [, String(state.step).toLowerCase()])[1];
   rule(`now: ${label}`);
+  const here = state.board.get(game.call("getSpaceTileKey", p.x, p.y));
+  if (here) line(`at ${game.call("getTileDisplayName", here)}${p.inSewer ? " (sewer)" : ""}`, C.bcyan);
   if (state.currentMoveRoll != null) line(`move roll ${state.currentMoveRoll}, ${state.movesRemaining} left`, C.white);
   if (state.currentZombieRoll != null) line(`zombie roll ${state.currentZombieRoll}`, C.bgreen);
   if (state.lastCombatResult) line(`last fight: ${state.lastCombatResult}`, C.bred);
@@ -400,7 +455,7 @@ function buildHelp() {
   text(grid, X, y, "Esc", C.yellow); text(grid, X + 6, y++, "close a box / stop looking", C.grey);
   text(grid, X, y, "v", C.yellow); text(grid, X + 6, y++, "Cabin spell (The End, Z4)", C.grey);
   text(grid, X, y, "o u", C.yellow); text(grid, X + 6, y++, "sewer token / in-out (Z6)", C.grey);
-  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / save and quit", C.grey);
+  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / quit", C.grey);
 
   text(grid, 0, ROWS - 1, " press any key to go back to the game ", C.black, C.grey);
   return grid;
@@ -454,10 +509,26 @@ function buildMenu(m) {
     text(grid, x + k.length + 3, y, what, primary ? C.white : C.grey);
     x += k.length + what.length + 5;
   };
-  if (m.save) key("c", `continue saved game (${m.save})`, true);
-  key("Enter", "start a new game", !m.save);
+  key("Enter", "start the game", true);
   key("q", "quit", false);
   return grid;
 }
 
-module.exports = { buildScreen, buildHelp, buildMenu, wrap, num, tileLoot, blankGrid, text, put, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };
+// A simple full-screen question: p = { title, lines: [[text, fg]], keys: [[key, what]] } (first key lit).
+function buildPrompt(p) {
+  const grid = blankGrid();
+  text(grid, 0, 0, " IC ZOMBIES ", C.black, C.green);
+  text(grid, 12, 0, "─".repeat(COLS - 12), C.dgrey);
+  text(grid, 14, 0, ` ${p.title} `, C.white);
+  let y = 3;
+  p.lines.forEach(([t, fg]) => { text(grid, 4, y++, t || "", fg === undefined ? C.grey : fg, C.black, COLS - 8); });
+  y += 1;
+  p.keys.forEach(([k, what], i) => {
+    text(grid, 4, y, ` ${k} `, i === 0 ? C.black : C.yellow, i === 0 ? C.brown : C.black);
+    text(grid, 6 + k.length + 2, y++, what, i === 0 ? C.white : C.grey);
+    y++;
+  });
+  return grid;
+}
+
+module.exports = { buildScreen, buildHelp, buildMenu, buildPrompt, wrap, num, tileLoot, blankGrid, text, put, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };

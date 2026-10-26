@@ -26,21 +26,27 @@ node bbs/door.js --utf8 --players 2   # same, starting at 2 players (hot-seat)
 node bbs/door.js --utf8 --new         # skip the new-game screen: Director's Cut, no variants
 ```
 
-Press `q` twice to save and quit (or Ctrl+C).
+Press `q` twice to quit (or Ctrl+C); your game picks up at the start of the turn you were on.
 
 ## New game screen
 
 Pick the number of players (left/right), tick collections with their letters, and tick variant rules with
 `x` (Guts), `y` (Sewer tokens), `z` (Dodge). It follows the web setup's rules: Six Feet Under turns on
 Director's Cut, mixing two expansions turns on Director's Cut, and School's Out / Six Feet Under / Jailbreak
-turn on their variant. Send in the Clowns stays off until it's finished on the web. `Enter` starts; `c`
-continues your saved game if you have one.
+turn on their variant. Send in the Clowns stays off until it's finished on the web. `Enter` starts.
 
 ## Saving
 
-The game saves itself whenever a step finishes with nothing half-done, and again when you quit or your
-connection drops. There's one save per BBS user (by name), and it's removed when the game ends. On the BBS
-saves go in `/sbbs/data/iczombies/`; locally in `~/.iczombies/` (or `--savedir DIR`).
+The game saves itself at the start of every turn (each player's turn, in hot-seat). If you get
+disconnected or quit partway through a turn, you come back to the start of that turn.
+
+When you come back with a game saved, the door asks first: `c` continue it, or `n` start a new one
+(which asks you to confirm with `y`, since starting over deletes the saved game). Each BBS user can have
+one game going at a time: the save is per user, and if the same user opens the door on a second node,
+it says the game is already open elsewhere. The save is removed when the game ends.
+
+On the BBS saves go in `/sbbs/data/iczombies/` (one `.json` per user, plus a `.lock` while it's open);
+locally in `~/.iczombies/` (or `--savedir DIR`).
 
 ## How a turn looks
 
@@ -77,6 +83,7 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 | `...` `"""` `:::` | road, grass, parking |
 | yellow walls / `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
 | green spaces | spaces a card lets you pick |
+| cyan name in a tile's top wall | the tile's name, shortened to fit (plain road and woods tiles have none); the sidebar's "at" line gives the full name of where you are |
 
 ## What works
 
