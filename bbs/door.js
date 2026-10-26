@@ -614,6 +614,27 @@ function deckPanel() {
   return { title: "Draw a tile", lines };
 }
 
+// Why a card in hand can't be played right now ("" if it can). Same checks as the web hand.
+function whyNotPlayable(card) {
+  const p = me();
+  const isPage = card.cardType === CARD_TYPE.BOTD_PAGE;
+  if (state.gameOver) return "the game is over";
+  if (busy()) return "finish what's on screen first";
+  if (p.eventUsedThisRound) return "you've already played a card this turn";
+  if (p.cannotPlayCardTurns > 0) return "you can't play cards this turn";
+  if (p.cardPlayFrozenUntilKill) return "no cards until you kill a zombie";
+  if (isPage) return "";
+  if (!card.isItem && typeof card.apply !== "function") return "it's offered in the fight box";
+  if (card.canPlay && !card.canPlay()) return "can't be played right now";
+  if (card.isItem && p.items.some((c) => c.name === card.name)) return "you already have one out";
+  if (card.isItem && card.requiresTile) {
+    const tile = state.board.get(call("getSpaceTileKey", p.x, p.y));
+    const allowed = [].concat(card.requiresTile);
+    if (!tile || !allowed.includes(tile.name)) return `only on the ${allowed.join(" or ")}`;
+  }
+  return "";
+}
+
 function cardPanel() {
   const p = me();
   const list = selected.from === "items" ? p.items : selected.from === "pages" ? p.botdPages : p.hand;
@@ -629,12 +650,7 @@ function cardPanel() {
   lines.push([]);
   const keyLine = (k, label, why) => lines.push([seg(` ${k} `, why ? C.dgrey : C.black, why ? C.black : C.brown), seg(` ${label}`, why ? C.dgrey : C.white), seg(why ? `  (${why})` : "", C.dgrey)]);
   if (selected.from === "hand") {
-    let why = "";
-    if (busy()) why = "finish what's on screen first";
-    else if (p.eventUsedThisRound) why = "you've already played a card this turn";
-    else if (p.cannotPlayCardTurns > 0) why = "you can't play cards this turn";
-    else if (!isPage && card.canPlay && !card.canPlay()) why = "can't be played right now";
-    else if (!isPage && !card.isItem && typeof card.apply !== "function") why = "it's offered in the fight box";
+    const why = whyNotPlayable(card);
     keyLine("p", isPage ? "stage it in front of you" : "play it", why);
     if (state.step === STEP.DISCARD && !isPage) keyLine("d", "discard it", "");
   } else if (selected.from === "pages") {
@@ -644,6 +660,7 @@ function cardPanel() {
   } else {
     lines.push([seg(card.combatWeapon ? "offered in the fight box when you fight" : "works on its own", C.dgrey)]);
   }
+  if (list.length > 1) lines.push([seg(" up/down ", C.black, C.grey), seg(` other cards (${selected.index + 1} of ${list.length})`, C.grey)]);
   lines.push([seg(" Esc ", C.black, C.grey), seg(" back", C.grey)]);
   return { title: card.name, lines };
 }
@@ -710,7 +727,7 @@ function scheduleDraw() {
 function keyHints() {
   if (mode === "look") return [["arrows", "move the cursor"], ["m Esc", "back to the game"]];
   if (mode === "items") return [["1-9", "look at an item"], ["Esc", "back"]];
-  if (mode === "card") return [["Esc", "back"]];
+  if (mode === "card") return [["up/down", "other cards"], ["Esc", "back"]];
   if (mode === "deck") return [["1-9", "pick a deck"], ["Esc", "back"]];
   if (state.gameOver) return [["n", "new game"], ["q q", "quit"]];
   if (state.pendingCombatDecision) return [["b h l", "choose in the fight box"]];
@@ -750,7 +767,39 @@ function keyHints() {
   return hints;
 }
 
+// ---- flashing the current player's space -------------------------------------------
+// Every FLASH_MS the space under the player whose turn it is swaps between its normal look and
+// their color, by rewriting just those 3 cells (a few bytes, not a whole screen).
+const FLASH_MS = 600;
+let flashCells = null;   // [{ x, y, off: cell, on: cell }]
+let flashOn = false;
+let flashTimer = null;
+
+function setFlash(grid, flash) {
+  flashCells = null;
+  flashOn = false;
+  // Skip it if a pop-up box covers that space.
+  if (flash && flash.cells.every((c) => grid[c.y][c.x].ch === c.ch && grid[c.y][c.x].bg === c.bg)) {
+    flashCells = flash.cells.map((c) => {
+      const off = { ch: c.ch, fg: c.fg, bg: c.bg };
+      const fg = (c.fg & 7) === flash.bg || c.ch === "@" ? (flash.bg === C.grey ? C.black : C.white) : c.fg;
+      return { x: c.x, y: c.y, off, on: { ch: c.ch, fg: c.ch === "@" ? C.black : fg, bg: flash.bg } };
+    });
+  }
+  if (flashCells && !flashTimer) {
+    flashTimer = setInterval(() => {
+      if (!flashCells || drawQueued) return;
+      flashOn = !flashOn;
+      process.stdout.write(ansi.renderCells(flashCells.map((c) => ({ x: c.x, y: c.y, ...(flashOn ? c.on : c.off) })), { utf8: UTF8 }));
+    }, FLASH_MS);
+  } else if (!flashCells && flashTimer) {
+    clearInterval(flashTimer);
+    flashTimer = null;
+  }
+}
+
 function draw() {
+  if (phase !== "game" || mode === "help") setFlash(null, null);
   if (phase === "locked") {
     process.stdout.write(ansi.render(buildPrompt({
       title: "already playing",
@@ -772,7 +821,7 @@ function draw() {
     process.stdout.write(ansi.render(buildHelp(), { utf8: UTF8 }));
     return;
   }
-  const extra = { keys: keyHints(), primaryKey: true, info: [] };
+  const extra = { keys: keyHints(), primaryKey: true, info: [], playable: me().hand.map((c) => !whyNotPlayable(c)) };
   const p = me();
 
   // Variant counters for the player whose turn it is.
@@ -834,7 +883,9 @@ function draw() {
   if (!autoSteps) extra.info.push(["auto steps off (a)", C.dgrey]);
   if (quitArmed) extra.info.push(["q again to quit", C.yellow]);
   if (notice) extra.info.push([notice, C.yellow]);
-  process.stdout.write(ansi.render(buildScreen(game, extra), { utf8: UTF8 }));
+  const grid = buildScreen(game, extra);
+  setFlash(grid, extra.flash);
+  process.stdout.write(ansi.render(grid, { utf8: UTF8 }));
 }
 
 // ---- input -----------------------------------------------------------------
@@ -910,6 +961,14 @@ function handleKey(k) {
   // card details
   if (mode === "card") {
     if (isEsc(k)) { mode = "play"; selected = null; return; }
+    // Up/down (or left/right) flips through the other cards in the same list.
+    if (dir) {
+      const p = me();
+      const list = selected.from === "items" ? p.items : selected.from === "pages" ? p.botdPages : p.hand;
+      if (list.length) selected.index = (selected.index + (dir === "N" || dir === "W" ? -1 : 1) + list.length) % list.length;
+      return;
+    }
+    if (/^[1-9]$/.test(k) && selected.from === "hand" && me().hand[Number(k) - 1]) { selected.index = Number(k) - 1; return; }
     const i = selected.index;
     const card = selected.from === "hand" ? me().hand[i] : null;
     if (selected.from === "hand" && lower === "p" && !busy()) {

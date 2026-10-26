@@ -60,7 +60,17 @@ function render(grid, { utf8 = false, safe = process.env.DOOR_GLYPHS !== "1" } =
   return Buffer.concat(parts);
 }
 
+// Redraw just a few cells (used to flash the current player's space without a full redraw).
+function renderCells(cells, { utf8 = false, safe = process.env.DOOR_GLYPHS !== "1" } = {}) {
+  const parts = [];
+  cells.forEach((c) => {
+    parts.push(Buffer.from(`\x1b[${c.y + 1};${c.x + 1}H${sgr(c.fg, c.bg)}`), encodeChar(c.ch, utf8, safe));
+  });
+  parts.push(Buffer.from("\x1b[0m"));
+  return Buffer.concat(parts);
+}
+
 const CLEAR = "\x1b[0m\x1b[2J\x1b[H";
 const SHOW_CURSOR = "\x1b[0m\x1b[?25h";
 
-module.exports = { render, CLEAR, SHOW_CURSOR };
+module.exports = { render, renderCells, CLEAR, SHOW_CURSOR };

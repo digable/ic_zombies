@@ -195,6 +195,12 @@ function drawMap(grid, game, state, center, extra = {}) {
       if (extra.cursor && extra.cursor.x === sx && extra.cursor.y === sy) {
         for (let i = 1; i <= 3; i++) grid[gy + 1][gx + i].bg = C.blue;
       }
+      // The space the player whose turn it is stands on: door.js flashes it in their color.
+      const active = state.players[state.currentPlayerIndex];
+      if (active && active.x === sx && active.y === sy && !active.knockedOut) {
+        const color = PLAYER_COLORS[state.currentPlayerIndex % PLAYER_COLORS.length];
+        extra.flash = { cells: [1, 2, 3].map((i) => ({ x: gx + i, y: gy + 1, ...grid[gy + 1][gx + i] })), bg: color & 7 };
+      }
     }
   }
   drawTileLabels(grid, game, state, sx0, sy0, preview);
@@ -327,11 +333,13 @@ function drawSidebar(grid, game, state, extra) {
   }
   (extra.info || []).forEach(([t, fg]) => line(t, fg));
 
-  rule("hand");
+  rule(p.hand.length ? "hand: green = playable" : "hand");
   if (!p.hand.length) line("(empty)", C.dgrey);
-  p.hand.slice(0, 5).forEach((card, i) => {
+  // Cards you can play right now are bright green; the rest are dark grey.
+  p.hand.slice(0, 6).forEach((card, i) => {
     const sel = extra.selectedCard === i;
-    line(`${i + 1} ${card.name}`, sel ? C.black : C.grey, sel ? C.cyan : C.black);
+    const ok = extra.playable ? extra.playable[i] : true;
+    line(`${i + 1} ${card.name}`, sel ? C.black : ok ? C.bgreen : C.dgrey, sel ? (ok ? C.green : C.grey) : C.black);
   });
   if (p.items.length) line(`i  items in front of you: ${p.items.length}`, C.dgrey);
 

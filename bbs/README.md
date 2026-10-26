@@ -58,7 +58,7 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 
 | When | Keys |
 |---|---|
-| Anytime | `Space` next step, `1`–`5` look at a card in your hand (then `p` play it, or `d` discard it at the discard step), `i` items in front of you (then `a` to use one), `m` look around the map with the arrow keys (your character doesn't move), `?` help, `Esc` close a box or stop looking, `q` `q` quit |
+| Anytime | `Space` next step, `1`–`5` look at a card in your hand (up/down flips through the others; `p` plays it, `d` discards it at the discard step), `i` items in front of you (then `a` to use one), `m` look around the map with the arrow keys (your character doesn't move), `?` help, `Esc` close a box or stop looking, `q` `q` quit |
 | Tile | `t` draw; it shows in yellow with its zombies/hearts/bullets in the sidebar. Arrows (or `Tab`) pick a spot, `r` rotates, `Enter` places |
 | Fight | `c`; if the roll misses, a fight box shows your roll, what you need, and each option's outcome (the good choice is green): `b` bullet, `h` heart reroll, `f` First Aid Kit, `k` Lucky Shot, `1`–`9` a weapon item, `l` lose |
 | Roll / move | `r`; arrows or `w` `a` `s` `d` to move, `x` to stop early |
@@ -74,7 +74,8 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 
 | Looks like | Means |
 |---|---|
-| `@` (one color per player) | players |
+| `@` (one color per player) | players; the space of the player whose turn it is flashes in their color |
+| green / grey cards in the hand | cards you can play right now / cards you can't (the card's box says why) |
 | `Z` green / `Z` red / `d` / `c` | zombie / government-enhanced zombie / dog / clown, followed by a number if several share a space |
 | red `+` (♥ in UTF-8) | heart token |
 | yellow `■` | bullet token |
