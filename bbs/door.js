@@ -691,7 +691,7 @@ function gameOverPanel() {
   const lines = w ? [[seg(`${w.playerName} WINS!`, C.yellow)], [seg(how, C.white)]] : wrap(last, 44).map((t) => [seg(t, C.white)]);
   lines.push([]);
   state.players.forEach((pl) => lines.push([seg(`${pl.name}`, C.grey), seg(`  ${pl.kills} kills`, C.dgrey)]));
-  lines.push([], [seg(" n ", C.black, C.brown), seg(" new game", C.white), seg("    "), seg(" q q ", C.black, C.grey), seg(" quit", C.grey)]);
+  lines.push([], [seg(" n ", C.black, C.brown), seg(" new game", C.white), seg("    "), seg(" q ", C.black, C.grey), seg(" quit", C.grey)]);
   return { title: w ? "VICTORY" : "GAME OVER", lines };
 }
 
@@ -734,7 +734,7 @@ function keyHints() {
   if (mode === "items") return [["1-9", "look at an item"], ["Esc", "back"]];
   if (mode === "card") return [["up/down", "other cards"], ["Esc", "back"]];
   if (mode === "deck") return [["1-9", "pick a deck"], ["Esc", "back"]];
-  if (state.gameOver) return [["n", "new game"], ["q q", "quit"]];
+  if (state.gameOver) return [["n", "new game"], ["q", "quit"]];
   if (state.pendingCombatDecision) return [["b h l", "choose in the fight box"]];
   if (state.pendingEventChoice) return [["1-9", "choose an option"]];
   if (state.pendingZombieDiceChallenge) return [["Enter", "accept the dice"], ["1-4", "spend a bullet / heart"]];
@@ -744,12 +744,12 @@ function keyHints() {
     const hints = [["Enter", "pick this space"], ["arrows", "move the cursor"], ["Tab", "next green space"]];
     if (spec.done) hints.push(["x", spec.done[0]]);
     if (spec.kind === "zmove") hints.splice(1, 0, ["Space", "move the rest"]);
-    hints.push(["1-5", "card details"], ["?", "help  q q quit"]);
+    hints.push(["1-5", "card details"], ["?", "help"], ["q", "quit"]);
     return hints;
   }
   if (state.pendingForcedMove) {
     const t = call("getPlayerById", state.pendingForcedMove.targetPlayerId);
-    return [["arrows", `move ${t ? t.name : "them"}`], ["x", "stop the forced move"], ["?", "help  q q quit"]];
+    return [["arrows", `move ${t ? t.name : "them"}`], ["x", "stop the forced move"], ["?", "help"], ["q", "quit"]];
   }
 
   const hints = [];
@@ -768,7 +768,7 @@ function keyHints() {
   const sw = sewerActions();
   if (sw.place) hints.push(["o", "place a sewer token"]);
   if (sw.toggle) hints.push(["u", me().inSewer ? "climb out of the sewer" : "drop into the sewer"]);
-  hints.push(["1-5", "card details"], ["m", "look around"], ["?", "help  q q quit"]);
+  hints.push(["1-5", "card details"], ["m", "look around"], ["?", "help"], ["q", "quit"]);
   return hints;
 }
 
@@ -887,7 +887,7 @@ function draw() {
   if (selected && selected.from === "hand" && mode === "card") extra.selectedCard = selected.index;
 
   if (!autoSteps) extra.info.push(["auto steps off (a)", C.dgrey]);
-  if (quitArmed) extra.info.push(["q again to quit", C.yellow]);
+  if (quitArmed) extra.info.push(["press q again to quit", C.yellow]);
   if (notice) extra.info.push([notice, C.yellow]);
   const grid = buildScreen(game, extra);
   setFlash(grid, extra.flash);

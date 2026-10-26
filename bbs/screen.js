@@ -485,7 +485,8 @@ function buildHelp() {
   text(grid, X, y, "Esc", C.yellow); text(grid, X + 6, y++, "close a box / stop looking", C.grey);
   text(grid, X, y, "v", C.yellow); text(grid, X + 6, y++, "Cabin spell (The End, Z4)", C.grey);
   text(grid, X, y, "o u", C.yellow); text(grid, X + 6, y++, "sewer token / in-out (Z6)", C.grey);
-  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / quit", C.grey);
+  text(grid, X, y, "?", C.yellow); text(grid, X + 6, y, "this help", C.grey);
+  text(grid, X + 17, y, "q", C.yellow); text(grid, X + 19, y++, "quit (asks once more)", C.grey);
 
   text(grid, 0, ROWS - 1, " press any key to go back to the game ", C.black, C.grey);
   return grid;
