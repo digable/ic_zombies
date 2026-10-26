@@ -155,6 +155,9 @@ function drawMap(grid, game, state, center, extra = {}) {
         if (otherSpots.has(`${tileOf(sx)},${tileOf(sy)}`)) {
           for (let i = 1; i <= 3; i++) put(grid, gx + i, gy + 1, "░", C.dgrey);
         }
+        if (extra.cursor && extra.cursor.x === sx && extra.cursor.y === sy) {
+          for (let i = 1; i <= 3; i++) put(grid, gx + i, gy + 1, " ", C.white, C.blue);
+        }
         continue;
       }
       const [fill, fg, bg] = GROUND[cell.type] || [".", C.dgrey, C.black];
@@ -177,18 +180,52 @@ function drawMap(grid, game, state, center, extra = {}) {
         put(grid, gx + 1 + i, gy + 1, s ? s[0] : fill, s ? s[1] : fg, bg);
       }
       if (slots.length > 3) put(grid, gx + 3, gy + 1, "+", C.white, bg);
+      if (extra.cursor && extra.cursor.x === sx && extra.cursor.y === sy) {
+        for (let i = 1; i <= 3; i++) grid[gy + 1][gx + i].bg = C.blue;
+      }
     }
   }
 }
 
+
+// The turn's steps in order, as shown in the tracker across the top.
+const TRACK = [
+  ["DRAW_TILE", "tile"], ["COMBAT", "fight"], ["DRAW_EVENTS", "cards"], ["ROLL_MOVE", "roll"],
+  ["MOVE", "move"], ["MOVE_ZOMBIES", "zombies"], ["DISCARD", "discard"], ["END", "end"]
+];
+
+function drawHeader(grid, state) {
+  text(grid, 0, 0, " IC ZOMBIES ", C.black, C.green);
+  const at = TRACK.findIndex(([s]) => s === state.step);
+  let x = 13;
+  TRACK.forEach(([, label], i) => {
+    const cur = i === at;
+    const shown = cur ? ` ${label} ` : label;
+    text(grid, x, 0, shown, cur ? C.black : i < at ? C.dgrey : C.grey, cur ? C.brown : C.black);
+    x += shown.length;
+    if (i < TRACK.length - 1) { text(grid, x, 0, cur ? "" : " ", C.dgrey); x += cur ? 0 : 1; }
+  });
+  text(grid, x + 1, 0, "─".repeat(Math.max(0, COLS - x - 1)), C.dgrey);
+}
+
+// Short "Z2 ♥1 ■2" summary of what a tile brings with it.
+function tileLoot(tile) {
+  const parts = [];
+  Object.entries(tile.zombies || {}).forEach(([type, n]) => {
+    if (n) parts.push([`${type === "dog" ? "d" : type === "clown" ? "c" : "Z"}${n}`, type === "regular" ? C.bgreen : C.bred]);
+  });
+  if (tile.hearts) parts.push([`♥${tile.hearts}`, C.bred]);
+  if (tile.bullets) parts.push([`■${tile.bullets}`, C.yellow]);
+  return parts;
+}
+
 function drawSidebar(grid, game, state, extra) {
-  const STEP = game.get("STEP");
   const p = state.players[state.currentPlayerIndex];
   let y = MAP_Y;
-  // the sidebar stops above the two log lines
-  const line = (s, fg = C.grey) => { if (y < ROWS - 2) text(grid, SIDE_X, y, s, fg, C.black, SIDE_W); y++; };
+  const LAST = ROWS - 3;                     // the sidebar stops above the two log lines
+  const line = (s, fg = C.grey, bg = C.black) => { if (y <= LAST) text(grid, SIDE_X, y, s, fg, bg, SIDE_W); y++; };
   const rule = (label) => {
-    if (y >= ROWS - 3) { y++; return; }
+    if (y > LAST - 1) { y++; return; }
     text(grid, SIDE_X, y, "─".repeat(SIDE_W), C.dgrey);
     text(grid, SIDE_X + 1, y++, ` ${label} `, C.bcyan, C.black, SIDE_W - 2);
   };
@@ -199,27 +236,46 @@ function drawSidebar(grid, game, state, extra) {
     text(grid, SIDE_X, y, me ? "►" : " ", C.yellow);
     text(grid, SIDE_X + 1, y, "@", PLAYER_COLORS[i % PLAYER_COLORS.length]);
     text(grid, SIDE_X + 3, y, pl.name, me ? C.white : C.grey, C.black, 13);
-    text(grid, SIDE_X + 17, y, `♥${pl.hearts}`, C.bred);
-    text(grid, SIDE_X + 21, y, `■${pl.bullets}`, C.yellow);
+    text(grid, SIDE_X + 16, y, `\u2665${pl.hearts}`, C.bred);
+    text(grid, SIDE_X + 19, y, `\u25a0${pl.bullets}`, C.yellow);
+    text(grid, SIDE_X + 22, y, `k${pl.kills}`, C.dgrey);
     y++;
-    text(grid, SIDE_X + 3, y++, `kills ${pl.kills}/25${pl.items.length ? `  items ${pl.items.length}` : ""}`, C.dgrey, C.black, SIDE_W - 3);
   });
 
-  rule(String(state.step).toLowerCase().replace("_", " "));
-  if (state.currentMoveRoll != null) line(`move roll ${state.currentMoveRoll}  left ${state.movesRemaining}`, C.white);
+  const label = (TRACK.find(([s]) => s === state.step) || [, String(state.step).toLowerCase()])[1];
+  rule(`now: ${label}`);
+  if (state.currentMoveRoll != null) line(`move roll ${state.currentMoveRoll}, ${state.movesRemaining} left`, C.white);
   if (state.currentZombieRoll != null) line(`zombie roll ${state.currentZombieRoll}`, C.bgreen);
   if (state.lastCombatResult) line(`last fight: ${state.lastCombatResult}`, C.bred);
   if (state.pendingTile) {
-    line(`placing: ${game.call("getTileDisplayName", state.pendingTile)}`, C.yellow);
+    line(`placing ${game.call("getTileDisplayName", state.pendingTile)}`, C.yellow);
+    const loot = tileLoot(state.pendingTile);
+    if (y <= LAST) {
+      if (!loot.length) text(grid, SIDE_X + 2, y, "no zombies or tokens", C.dgrey);
+      let x = SIDE_X + 2;
+      loot.forEach(([t, fg]) => { text(grid, x, y, t, fg); x += t.length + 1; });
+    }
+    y++;
     if (extra.spotInfo) line(extra.spotInfo, C.dgrey);
   }
+  (extra.info || []).forEach(([t, fg]) => line(t, fg));
 
   rule("hand");
   if (!p.hand.length) line("(empty)", C.dgrey);
-  p.hand.slice(0, 5).forEach((card, i) => line(`${i + 1} ${card.name}`, C.grey));
+  p.hand.slice(0, 5).forEach((card, i) => {
+    const sel = extra.selectedCard === i;
+    line(`${i + 1} ${card.name}`, sel ? C.black : C.grey, sel ? C.cyan : C.black);
+  });
+  if (p.items.length) line(`i  items in front of you: ${p.items.length}`, C.dgrey);
 
   rule("keys");
-  (extra.keys || []).forEach((k) => line(k, C.dgrey));
+  (extra.keys || []).forEach(([key, what], i) => {
+    if (y > LAST) return;
+    const primary = i === 0 && extra.primaryKey;
+    text(grid, SIDE_X, y, key, primary ? C.black : C.yellow, primary ? C.brown : C.black);
+    text(grid, SIDE_X + key.length + 1, y, what, primary ? C.white : C.grey, C.black, SIDE_W - key.length - 1);
+    y++;
+  });
 }
 
 function drawLog(grid, state) {
@@ -227,18 +283,49 @@ function drawLog(grid, state) {
   lines.forEach((l, i) => text(grid, 0, ROWS - 2 + i, l.text.replace(/^\[T\d+\]\s*/, ""), i === 0 ? C.white : C.dgrey));
 }
 
-// keys: list of short key hints for the sidebar; center: board space to centre on
+// Word-wrap plain text to a width.
+function wrap(str, width) {
+  const out = [];
+  String(str || "").split("\n").forEach((para) => {
+    let cur = "";
+    para.split(/\s+/).forEach((w) => {
+      if (!w) return;
+      if ((cur + " " + w).trim().length > width) { if (cur) out.push(cur); cur = w; } else cur = (cur + " " + w).trim();
+    });
+    out.push(cur);
+  });
+  return out;
+}
+
+// A pop-up box over the map. panel = { title, lines: [ [ [text, fg, bg?], ... ], ... ] }
+function drawPanel(grid, panel) {
+  const W = MAP_COLS - 4, x0 = 2;
+  const H = panel.lines.length + 3;
+  const y0 = Math.max(MAP_Y + 1, MAP_Y + Math.floor((MAP_ROWS - H) / 2));
+  for (let y = y0; y < y0 + H; y++) for (let x = x0; x < x0 + W; x++) put(grid, x, y, " ", C.grey, C.black);
+  for (let x = x0; x < x0 + W; x++) { put(grid, x, y0, "─", C.bcyan); put(grid, x, y0 + H - 1, "─", C.bcyan); }
+  for (let y = y0; y < y0 + H; y++) { put(grid, x0, y, "│", C.bcyan); put(grid, x0 + W - 1, y, "│", C.bcyan); }
+  put(grid, x0, y0, "┌", C.bcyan); put(grid, x0 + W - 1, y0, "┐", C.bcyan);
+  put(grid, x0, y0 + H - 1, "└", C.bcyan); put(grid, x0 + W - 1, y0 + H - 1, "┘", C.bcyan);
+  text(grid, x0 + 2, y0, ` ${panel.title} `, C.black, C.cyan, W - 4);
+  panel.lines.forEach((segs, i) => {
+    let x = x0 + 2;
+    segs.forEach(([t, fg = C.grey, bg = C.black]) => { text(grid, x, y0 + 2 + i, t, fg, bg, x0 + W - 2 - x); x += t.length; });
+  });
+}
+
+// keys: [[key, what], ...] (first one highlighted when primaryKey is set); center: space to centre on;
+// panel: optional pop-up; cursor: highlighted space (look mode); selectedCard: hand index
 function buildScreen(game, extra = {}) {
   const state = game.get("state");
   const grid = blankGrid();
-  text(grid, 0, 0, " IC ZOMBIES ", C.black, C.green);
-  text(grid, 12, 0, "─".repeat(COLS - 12), C.dgrey);
-  text(grid, 14, 0, " zombies.sodamachine.net · bbs edition ", C.dgrey);
+  drawHeader(grid, state);
   const p = state.players[state.currentPlayerIndex];
   const center = extra.center || { x: p.x, y: p.y };
   drawMap(grid, game, state, center, extra);
   drawSidebar(grid, game, state, extra);
   drawLog(grid, state);
+  if (extra.panel) drawPanel(grid, extra.panel);
   return grid;
 }
 
@@ -246,13 +333,11 @@ function buildScreen(game, extra = {}) {
 function buildHelp() {
   const grid = blankGrid();
   text(grid, 0, 0, " IC ZOMBIES ", C.black, C.green);
-  text(grid, 12, 0, "\u2500".repeat(COLS - 12), C.dgrey);
+  text(grid, 12, 0, "─".repeat(COLS - 12), C.dgrey);
   text(grid, 14, 0, " help: keys and symbols ", C.white);
 
-  // left: map legend
   let y = 2;
-  const head = (x, label) => { text(grid, x, y, label, C.bcyan); y++; };
-  head(1, "ON THE MAP");
+  text(grid, 1, y++, "ON THE MAP", C.bcyan);
   const sym = (cells, label) => {
     cells.forEach(([ch, fg, bg], i) => put(grid, 2 + i, y, ch, fg, bg === undefined ? C.black : bg));
     text(grid, 7, y++, label, C.grey);
@@ -260,50 +345,50 @@ function buildHelp() {
   sym([["@", C.yellow], ["@", C.bmagenta]], "players (each has a color)");
   sym([["Z", C.bgreen]], "zombie");
   sym([["Z", C.bred]], "government-enhanced zombie");
-  sym([["d", C.bred]], "zombie dog");
-  sym([["c", C.bmagenta]], "zombie clown");
+  sym([["d", C.bred], ["c", C.bmagenta]], "zombie dog, zombie clown");
   sym([["Z", C.bgreen], ["2", C.bgreen]], "a number = how many there");
-  sym([["\u2665", C.bred]], "heart token (pick it up)");
-  sym([["\u25a0", C.yellow]], "bullet token (pick it up)");
+  sym([["♥", C.bred], ["■", C.yellow]], "heart / bullet token");
   sym([[" ", C.white, C.brown], [" ", C.white, C.brown], [" ", C.white, C.brown]], "inside a building");
-  sym([["\u2500", C.grey], ["+", C.yellow], ["\u2500", C.grey]], "wall with a door");
-  sym([[".", C.dgrey], [".", C.dgrey], [".", C.dgrey]], "road");
-  sym([["\"", C.green], ["\"", C.green], ["\"", C.green]], "grass");
-  sym([[":", C.grey], [":", C.grey], [":", C.grey]], "parking lot");
-  sym([["\u2248", C.bblue, C.blue], ["\u03c4", C.green]], "water, woods");
-  sym([["\u2500", C.yellow], ["\u2500", C.yellow], ["\u2500", C.yellow]], "tile you're placing");
-  sym([["\u2591", C.dgrey], ["\u2591", C.dgrey], ["\u2591", C.dgrey]], "other spots it fits");
+  sym([["─", C.grey], ["+", C.yellow], ["─", C.grey]], "wall with a door");
+  sym([[".", C.dgrey], ["\"", C.green], [":", C.grey]], "road, grass, parking");
+  sym([["≈", C.bblue, C.blue], ["τ", C.green]], "water, woods");
+  sym([["─", C.yellow], ["─", C.yellow], ["─", C.yellow]], "tile you're placing");
+  sym([["░", C.dgrey], ["░", C.dgrey], ["░", C.dgrey]], "other spots it fits");
+  sym([[" ", C.white, C.blue], [" ", C.white, C.blue], [" ", C.white, C.blue]], "look-mode cursor (m)");
+  y++;
+  text(grid, 1, y++, "ACROSS THE TOP", C.bcyan);
+  text(grid, 2, y++, "the turn's steps; yours is lit", C.grey);
+  text(grid, 2, y++, "in the sidebar, the lit key is", C.grey);
+  text(grid, 2, y++, "the one to press next", C.grey);
 
-  // right: each turn
   y = 2;
   const X = 40;
   text(grid, X, y++, "EACH TURN", C.bcyan);
   const step = (n, name, keys) => {
     text(grid, X, y, `${n}`, C.yellow);
     text(grid, X + 2, y, name, C.white);
-    text(grid, X + 15, y++, keys, C.grey, C.black, COLS - X - 15);
+    text(grid, X + 12, y++, keys, C.grey, C.black, COLS - X - 12);
   };
-  step(1, "draw a tile", "t, then arrows/Tab");
-  text(grid, X + 15, y++, "pick, r turn, Enter", C.grey);
-  step(2, "fight", "c   bad roll: b bullet,");
-  text(grid, X + 15, y++, "h heart, l lose", C.grey);
-  step(3, "draw cards", "e");
+  step(1, "tile", "t draw, arrows pick");
+  text(grid, X + 12, y++, "spot, r turn, Enter", C.grey);
+  step(2, "fight", "c, then pick from the");
+  text(grid, X + 12, y++, "fight box if you miss", C.grey);
+  step(3, "cards", "drawn for you");
   step(4, "roll", "r");
   step(5, "move", "arrows/wasd, x stop");
-  step(6, "zombies", "z");
-  step(7, "discard", "1-3 discard, n keep");
-  step(8, "end turn", "Enter");
+  step(6, "zombies", "move on their own");
+  step(7, "discard", "pick a card, d; or n");
+  step(8, "end", "Enter");
   y++;
-  text(grid, X, y++, "Space", C.yellow);
-  text(grid, X + 2, y++, "does the next step for you", C.grey);
-  y++;
-  text(grid, X, y++, "ANYTIME", C.bcyan);
-  text(grid, X, y, "1-9", C.yellow); text(grid, X + 6, y++, "play a card / pick an option", C.grey);
-  text(grid, X, y, "?", C.yellow); text(grid, X + 6, y++, "this help", C.grey);
-  text(grid, X, y, "q q", C.yellow); text(grid, X + 6, y++, "quit", C.grey);
+  text(grid, X, y, "Space", C.black, C.brown); text(grid, X + 6, y++, "do the next step", C.grey);
+  text(grid, X, y, "1-5", C.yellow); text(grid, X + 6, y++, "look at a card (p plays it)", C.grey);
+  text(grid, X, y, "i", C.yellow); text(grid, X + 6, y++, "items in front of you", C.grey);
+  text(grid, X, y, "m", C.yellow); text(grid, X + 6, y++, "look around the map", C.grey);
+  text(grid, X, y, "Esc", C.yellow); text(grid, X + 6, y++, "close a box / stop looking", C.grey);
+  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / quit", C.grey);
 
   text(grid, 0, ROWS - 1, " press any key to go back to the game ", C.black, C.grey);
   return grid;
 }
 
-module.exports = { buildScreen, buildHelp, COLS, ROWS, C, VIEW_W, VIEW_H };
+module.exports = { buildScreen, buildHelp, wrap, tileLoot, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };
