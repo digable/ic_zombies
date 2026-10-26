@@ -27,7 +27,7 @@ Press `q` twice to quit (or Ctrl+C).
 
 | Step | Keys |
 |---|---|
-| Draw tile | `t` draw, `[` `]` pick a spot, `Enter` place it |
+| Draw tile | `t` draw; the tile shows in yellow where it would go. Arrows (or `Tab`) jump between the spots it fits, `r` rotates it, `Enter` places it |
 | Combat | `c` fight; if it goes badly: `b` spend a bullet, `h` spend a heart (reroll), `l` lose |
 | Draw events | `e` |
 | Roll | `r` |
@@ -35,7 +35,7 @@ Press `q` twice to quit (or Ctrl+C).
 | Zombies | `z` (they move on their own) |
 | Discard | `1`–`3` discard that card, `n` keep your hand |
 | End turn | `Enter` |
-| Anytime | `1`–`9` play a card or pick an option, `q` `q` quit |
+| Anytime | `Space` does the next step (draw, place, fight, draw cards, roll, zombies, keep hand, end turn); `1`–`9` play a card or pick an option; `?` help screen with every key and map symbol; `q` `q` quit |
 
 ## On the map
 
@@ -48,7 +48,7 @@ Press `q` twice to quit (or Ctrl+C).
 | brown blocks | building interiors |
 | yellow `+` in a wall | door |
 | `...` `"""` `:::` | road, grass, parking |
-| `░` / yellow `▓` | places the drawn tile can go / the one selected |
+| yellow walls / `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
 
 ## What works in this spike
 
