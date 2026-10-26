@@ -78,7 +78,7 @@ of the turn, zombies that moved sit on a red background.
 
 | Looks like | Means |
 |---|---|
-| `@` (one color per player) | players; the space of the player whose turn it is flashes in their color |
+| `@` (one color per player) | players; the `@` of the player whose turn it is flashes in their color |
 | green / grey cards in the hand | cards you can play right now / cards you can't (the card's box says why) |
 | `Z` green / `Z` red / `d` / `c` | zombie / government-enhanced zombie / dog / clown, followed by a number if several share a space |
 | a zombie on red | it moved this turn (a whole space lit red: the zombie moving right now, in the replay) |

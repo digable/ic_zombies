@@ -220,11 +220,13 @@ function drawMap(grid, game, state, center, extra = {}) {
       if (extra.cursor && extra.cursor.x === sx && extra.cursor.y === sy) {
         for (let i = 1; i <= 3; i++) grid[gy + 1][gx + i].bg = C.blue;
       }
-      // The space the player whose turn it is stands on: door.js flashes it in their color.
+      // The @ of the player whose turn it is: door.js flashes just that character in their color.
       const active = state.players[state.currentPlayerIndex];
       if (active && active.x === sx && active.y === sy && !active.knockedOut) {
         const color = PLAYER_COLORS[state.currentPlayerIndex % PLAYER_COLORS.length];
-        extra.flash = { cells: [1, 2, 3].map((i) => ({ x: gx + i, y: gy + 1, ...grid[gy + 1][gx + i] })), bg: color & 7 };
+        // Where their @ sits: after any earlier players sharing the space.
+        const slot = state.players.slice(0, state.currentPlayerIndex).filter((pl) => pl.x === sx && pl.y === sy && !pl.knockedOut).length;
+        if (slot < 3) extra.flash = { cells: [{ x: gx + 1 + slot, y: gy + 1, ...grid[gy + 1][gx + 1 + slot] }], bg: color & 7 };
       }
     }
   }
