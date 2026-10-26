@@ -12,7 +12,7 @@ const CP437 = {
   "├": 195, "┤": 180, "┬": 194, "┴": 193, "┼": 197,
   "░": 176, "▒": 177, "▓": 178, "█": 219,
   "≈": 247, "≡": 240, "τ": 231, "∩": 239, "■": 254,
-  "·": 250, "∙": 249, "»": 175, "°": 248,
+  "·": 250, "∙": 249, "»": 175, "°": 248, "½": 171, "¼": 172,
   "♥": 3          // heart: CP437 glyph 3, only sent with DOOR_GLYPHS=1 (see SAFE)
 };
 
@@ -21,7 +21,11 @@ const CP437 = {
 const SAFE = { "♥": "+" };
 
 // Characters with no CP437 equivalent (arrows etc.) get a plain stand-in.
-const FALLBACK = { "►": "»", "↑": "^", "↓": "v", "←": "<", "→": ">" };
+// (The game's log text uses dashes and curly quotes too.)
+const FALLBACK = {
+  "►": "»", "↑": "^", "↓": "v", "←": "<", "→": ">",
+  "—": "-", "–": "-", "‘": "'", "’": "'", "“": "\"", "”": "\"", "…": ".", "×": "x"
+};
 
 const FG = [30, 34, 32, 36, 31, 35, 33, 37]; // ANSI order differs from BBS color numbers
 function sgr(fg, bg) {

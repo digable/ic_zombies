@@ -67,6 +67,9 @@ function text(grid, x, y, s, fg = C.grey, bg = C.black, max = COLS - x) {
   [...String(s)].slice(0, max).forEach((ch, i) => put(grid, x + i, y, ch, fg, bg));
 }
 
+// Hearts can come in halves (zombie dogs bite for ½): 2.5 -> "2½".
+const num = (n) => (Number.isInteger(n) ? String(n) : `${Math.floor(n) || ""}½`);
+
 function zombieKind(game, type) {
   const Z = game.get("ZOMBIE_TYPE");
   if (type === Z.DOG) return "dog";
@@ -180,6 +183,15 @@ function drawMap(grid, game, state, center, extra = {}) {
         put(grid, gx + 1 + i, gy + 1, s ? s[0] : fill, s ? s[1] : fg, bg);
       }
       if (slots.length > 3) put(grid, gx + 3, gy + 1, "+", C.white, bg);
+      // Picking a space for a card: spaces you can pick are green, a chosen zombie magenta.
+      const mark = extra.selectedSpace === spaceKey ? C.magenta : extra.targets && extra.targets.has(spaceKey) ? C.green : null;
+      if (mark !== null) {
+        for (let i = 1; i <= 3; i++) {
+          const c = grid[gy + 1][gx + i];
+          c.bg = mark;
+          if (c.fg === C.green || c.fg === C.bgreen || c.fg === C.dgrey || c.fg === C.magenta || c.fg === C.bmagenta) c.fg = c.ch === "Z" ? C.white : C.black;
+        }
+      }
       if (extra.cursor && extra.cursor.x === sx && extra.cursor.y === sy) {
         for (let i = 1; i <= 3; i++) grid[gy + 1][gx + i].bg = C.blue;
       }
@@ -235,8 +247,8 @@ function drawSidebar(grid, game, state, extra) {
     const me = i === state.currentPlayerIndex;
     text(grid, SIDE_X, y, me ? "►" : " ", C.yellow);
     text(grid, SIDE_X + 1, y, "@", PLAYER_COLORS[i % PLAYER_COLORS.length]);
-    text(grid, SIDE_X + 3, y, pl.name, me ? C.white : C.grey, C.black, 13);
-    text(grid, SIDE_X + 16, y, `\u2665${pl.hearts}`, C.bred);
+    text(grid, SIDE_X + 3, y, pl.name, me ? C.white : C.grey, C.black, 12);
+    text(grid, SIDE_X + 15, y, `\u2665${num(pl.hearts)}`, C.bred);
     text(grid, SIDE_X + 19, y, `\u25a0${pl.bullets}`, C.yellow);
     text(grid, SIDE_X + 22, y, `k${pl.kills}`, C.dgrey);
     y++;
@@ -354,12 +366,13 @@ function buildHelp() {
   sym([["≈", C.bblue, C.blue], ["τ", C.green]], "water, woods");
   sym([["─", C.yellow], ["─", C.yellow], ["─", C.yellow]], "tile you're placing");
   sym([["░", C.dgrey], ["░", C.dgrey], ["░", C.dgrey]], "other spots it fits");
-  sym([[" ", C.white, C.blue], [" ", C.white, C.blue], [" ", C.white, C.blue]], "look-mode cursor (m)");
+  sym([[" ", C.white, C.blue], [" ", C.white, C.blue], [" ", C.white, C.blue]], "cursor (look around / pick)");
+  sym([["Z", C.white, C.green], [".", C.black, C.green], [".", C.black, C.green]], "a space a card lets you pick");
   y++;
-  text(grid, 1, y++, "ACROSS THE TOP", C.bcyan);
-  text(grid, 2, y++, "the turn's steps; yours is lit", C.grey);
-  text(grid, 2, y++, "in the sidebar, the lit key is", C.grey);
-  text(grid, 2, y++, "the one to press next", C.grey);
+  text(grid, 1, y++, "PICKING A SPACE (cards)", C.bcyan);
+  text(grid, 2, y++, "arrows move, Tab jumps to the", C.grey);
+  text(grid, 2, y++, "next green space, Enter picks,", C.grey);
+  text(grid, 2, y++, "x when you're done / to cancel", C.grey);
 
   y = 2;
   const X = 40;
@@ -385,10 +398,66 @@ function buildHelp() {
   text(grid, X, y, "i", C.yellow); text(grid, X + 6, y++, "items in front of you", C.grey);
   text(grid, X, y, "m", C.yellow); text(grid, X + 6, y++, "look around the map", C.grey);
   text(grid, X, y, "Esc", C.yellow); text(grid, X + 6, y++, "close a box / stop looking", C.grey);
-  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / quit", C.grey);
+  text(grid, X, y, "v", C.yellow); text(grid, X + 6, y++, "Cabin spell (The End, Z4)", C.grey);
+  text(grid, X, y, "o u", C.yellow); text(grid, X + 6, y++, "sewer token / in-out (Z6)", C.grey);
+  text(grid, X, y, "? / q q", C.yellow); text(grid, X + 8, y++, "this help / save and quit", C.grey);
 
   text(grid, 0, ROWS - 1, " press any key to go back to the game ", C.black, C.grey);
   return grid;
 }
 
-module.exports = { buildScreen, buildHelp, wrap, tileLoot, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };
+// The new-game screen. m = { players, max, names, rows: [{ letter, label, code, on, wip, what }],
+//   variants: [{ letter, label, on }], save: "turn 4, 2 players" | null, notice }
+function buildMenu(m) {
+  const grid = blankGrid();
+  text(grid, 0, 0, " IC ZOMBIES ", C.black, C.green);
+  text(grid, 12, 0, "─".repeat(COLS - 12), C.dgrey);
+  text(grid, 14, 0, " new game ", C.white);
+
+  let y = 2;
+  text(grid, 2, y, "Players", C.bcyan);
+  text(grid, 11, y, "<", C.yellow);
+  text(grid, 13, y, String(m.players), C.white);
+  text(grid, 15, y, ">", C.yellow);
+  text(grid, 18, y++, "left/right (or - +) to change", C.dgrey);
+  let x = 2;
+  m.names.forEach((n, i) => {
+    const t = n.slice(0, 16);
+    if (x + t.length + 3 > COLS) { y++; x = 2; }
+    text(grid, x, y, "@", PLAYER_COLORS[i % PLAYER_COLORS.length]);
+    text(grid, x + 2, y, t, C.grey);
+    x += t.length + 4;
+  });
+  y += 2;
+
+  text(grid, 2, y++, "COLLECTIONS", C.bcyan);
+  m.rows.forEach((r) => {
+    text(grid, 2, y, ` ${r.letter} `, r.wip ? C.dgrey : C.black, r.wip ? C.black : C.brown);
+    text(grid, 6, y, r.wip ? "   " : r.on ? "[x]" : "[ ]", r.on ? C.bgreen : C.grey);
+    text(grid, 10, y, r.label, r.wip ? C.dgrey : r.on ? C.white : C.grey, C.black, 30);
+    text(grid, 40, y, r.code, C.dgrey);
+    text(grid, 46, y++, r.wip ? "coming soon" : r.what, C.dgrey, C.black, COLS - 46);
+  });
+  text(grid, 2, y++, "VARIANT RULES", C.bcyan);
+  m.variants.forEach((v) => {
+    text(grid, 2, y, ` ${v.letter} `, C.black, C.brown);
+    text(grid, 6, y, v.on ? "[x]" : "[ ]", v.on ? C.bgreen : C.grey);
+    text(grid, 10, y++, v.label, v.on ? C.white : C.grey, C.black, COLS - 10);
+  });
+
+  y = ROWS - 3;
+  if (m.notice) text(grid, 2, y, m.notice, C.yellow);
+  y++;
+  x = 2;
+  const key = (k, what, primary) => {
+    text(grid, x, y, ` ${k} `, primary ? C.black : C.yellow, primary ? C.brown : C.black);
+    text(grid, x + k.length + 3, y, what, primary ? C.white : C.grey);
+    x += k.length + what.length + 5;
+  };
+  if (m.save) key("c", `continue saved game (${m.save})`, true);
+  key("Enter", "start a new game", !m.save);
+  key("q", "quit", false);
+  return grid;
+}
+
+module.exports = { buildScreen, buildHelp, buildMenu, wrap, num, tileLoot, blankGrid, text, put, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };

@@ -91,6 +91,13 @@ function playEvent(index) {
     return;
   }
 
+  // Cards like Lucky Shot have no effect of their own — they're used from the combat panel.
+  if (!card.isItem && typeof card.apply !== "function") {
+    logLine(`${card.name} isn't played on its own — it's offered when you fight.`);
+    render();
+    return;
+  }
+
   if (card.canPlay && !card.canPlay()) {
     logLine(`${card.name} cannot be played at this time.`);
     render();
@@ -115,7 +122,8 @@ function playEvent(index) {
     player.hand.splice(index, 1);
     player.items.push(card);
     state.lastPlayedEventCard = { card, playerId: player.id };
-    card.apply(player, buildEventDeckHelpers());
+    if (typeof card.apply === "function") card.apply(player, buildEventDeckHelpers());
+    else logLine(`${player.name} placed ${card.name} in front of them.`);
     if (card.isWeapon) { state.lastPlayedWeaponName = card.name; state.lastPlayedWeaponByPlayerId = player.id; }
     player.eventUsedThisRound = true;
     render();
@@ -363,6 +371,8 @@ function handleRocketLauncherClick(sx, sy) {
   const tileKey = getSpaceTileKey(sx, sy);
   const tile = state.board.get(tileKey);
   if (!tile) return;
+  const tileX = spaceToTileCoord(sx);
+  const tileY = spaceToTileCoord(sy);
 
   if (tile.type === "helipad") {
     logLine("Rocket Launcher cannot target the Helipad.");
@@ -429,6 +439,8 @@ function handleMinefieldClick(sx, sy) {
 
   const tile = state.board.get(getSpaceTileKey(sx, sy));
   if (!tile) return;
+  const tileX = spaceToTileCoord(sx);
+  const tileY = spaceToTileCoord(sy);
 
   let killed = 0;
   for (let lx = 0; lx < 3 && killed < pmf.remaining; lx++) {
@@ -472,6 +484,8 @@ function handleZombieFloodClick(sx, sy) {
   const tileKey = getSpaceTileKey(sx, sy);
   const tile = state.board.get(tileKey);
   if (!tile) return;
+  const tileX = spaceToTileCoord(sx);
+  const tileY = spaceToTileCoord(sy);
 
   if (state.noZombieTiles?.has(tileKey)) {
     logLine("That tile is marked as a no-zombie zone — pick another.");
