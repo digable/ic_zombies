@@ -191,6 +191,23 @@ function drawMap(grid, game, state, center, extra = {}) {
         else put(grid, gx + 1 + i, gy + 1, fill, fg, bg);
       }
       if (slots.length > 3) put(grid, gx + 3, gy + 1, "+", C.white, bg);
+      // Zombies that moved this turn: the zombie itself sits on red. During the move replay the
+      // whole space of the zombie moving now is red.
+      if (extra.hot === spaceKey) {
+        for (let i = 1; i <= 3; i++) {
+          const c = grid[gy + 1][gx + i];
+          c.bg = C.red;
+          if (c.fg === C.bred || c.fg === C.red || c.fg === C.dgrey || c.fg === C.black) c.fg = C.white;
+        }
+      } else if (z && extra.movedSpaces && extra.movedSpaces.has(spaceKey)) {
+        for (let i = 1; i <= 3; i++) {
+          const c = grid[gy + 1][gx + i];
+          if (c.ch === ZOMBIE_LOOK[zombieKind(game, z.type)][0] || /\d/.test(c.ch)) {
+            c.bg = C.red;
+            if (c.fg === C.bred) c.fg = C.white;
+          }
+        }
+      }
       // Picking a space for a card: spaces you can pick are green, a chosen zombie magenta.
       const mark = extra.selectedSpace === spaceKey ? C.magenta : extra.targets && extra.targets.has(spaceKey) ? C.green : null;
       if (mark !== null) {

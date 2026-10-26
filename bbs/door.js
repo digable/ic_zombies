@@ -63,6 +63,21 @@ const TILE_DIM = game.get("TILE_DIM");
 const userName = bbsUserName();
 const SAVE_DIR = saves.saveDir(val("savedir"));
 
+// ---- zombie moves, for the replay ------------------------------------------------
+// The rules move zombies instantly. To show what happened, every zombie move is recorded with
+// the board before and after it, and the door replays them one at a time (see replayFrame).
+const zombieMoves = [];
+const copyZombies = () => new Map([...state.zombies].map(([k, v]) => [k, { ...v }]));
+{
+  const realMove = game.ctx.moveZombieAllSteps;
+  game.ctx.moveZombieAllSteps = function (startKey, pzm) {
+    const before = copyZombies();
+    const result = realMove(startKey, pzm);
+    if (result.moved) zombieMoves.push({ from: startKey, to: result.finalKey, before, after: copyZombies() });
+    return result;
+  };
+}
+
 // ---- door state (only the screen; the game's own state lives in `state`) ------
 let phase = "menu";       // locked | resume | confirmNew | menu | game
 let mode = "play";        // play | look | card | items | help | deck
@@ -714,14 +729,46 @@ function describeSpace(sx, sy) {
 }
 
 // ---- drawing ---------------------------------------------------------------
+// ---- replaying zombie moves ------------------------------------------------------
+// Each move shows in two frames: the zombie about to move, its whole space lit red; then the
+// zombie in the space it ended up in, lit red. Space (or any key) skips the rest.
+const REPLAY_MS = [700, 800];   // how long each frame stays up
+let replay = null;              // { moves, i, frame }
+let replayTimer = null;
+
+function startReplay() {
+  if (replay || !zombieMoves.length) return;
+  replay = { moves: zombieMoves.splice(0), i: 0, frame: 0 };
+  stepReplay(false);
+}
+
+function stepReplay(advance = true) {
+  if (!replay) return;
+  if (advance) {
+    replay.frame += 1;
+    if (replay.frame > 1) { replay.frame = 0; replay.i += 1; }
+  }
+  clearTimeout(replayTimer);
+  if (replay.i >= replay.moves.length) { endReplay(); return; }
+  replayTimer = setTimeout(() => { stepReplay(); scheduleDraw(); }, REPLAY_MS[replay.frame]);
+}
+
+function endReplay() {
+  clearTimeout(replayTimer);
+  replay = null;
+  zombieMoves.length = 0;
+  scheduleDraw();
+}
+
 function scheduleDraw() {
   if (drawQueued) return;
   drawQueued = true;
   setImmediate(() => {
     drawQueued = false;
     try {
-      autoAdvance();
+      if (!replay) autoAdvance();
       autoSave();
+      startReplay();
       draw();
     } catch (e) {
       process.stderr.write(`${e.stack}\n`);
@@ -770,6 +817,30 @@ function keyHints() {
   if (sw.toggle) hints.push(["u", me().inSewer ? "climb out of the sewer" : "drop into the sewer"]);
   hints.push(["1-5", "card details"], ["m", "look around"], ["?", "help"], ["q", "quit"]);
   return hints;
+}
+
+function drawReplay(extra) {
+  const m = replay.moves[replay.i];
+  const spot = replay.frame === 0 ? m.from : m.to;
+  const [x, y] = spot.split(",").map(Number);
+  extra.hot = spot;
+  extra.keys = [["Space", "skip"]];
+  extra.info.push([`ZOMBIES MOVING  ${replay.i + 1} of ${replay.moves.length}`, C.bred]);
+  extra.info.push([replay.frame === 0 ? "this one moves..." : "...and ends up here", C.white]);
+  // Keep the player in view unless the zombie is off the map's edge, then follow the zombie.
+  const p = me();
+  const { VIEW_W, VIEW_H } = require("./screen");
+  if (Math.abs(x - p.x) > Math.floor(VIEW_W / 2) - 1 || Math.abs(y - p.y) > Math.floor(VIEW_H / 2) - 1) extra.center = { x, y };
+  // Only the zombies that have already moved in the replay are marked as moved.
+  extra.movedSpaces = new Set(replay.moves.slice(0, replay.i).map((mv) => mv.to));
+  // Show the board (and the step tracker) as it was at that moment.
+  const live = state.zombies, liveStep = state.step;
+  state.zombies = replay.frame === 0 ? m.before : m.after;
+  state.step = STEP.MOVE_ZOMBIES;
+  let grid;
+  try { grid = buildScreen(game, extra); } finally { state.zombies = live; state.step = liveStep; }
+  setFlash(grid, extra.flash);
+  process.stdout.write(ansi.render(grid, { utf8: UTF8 }));
 }
 
 // ---- flashing the current player's space -------------------------------------------
@@ -827,7 +898,7 @@ function draw() {
     process.stdout.write(ansi.render(buildHelp(), { utf8: UTF8 }));
     return;
   }
-  const extra = { keys: keyHints(), primaryKey: true, info: [], playable: me().hand.map((c) => !whyNotPlayable(c)) };
+  const extra = { keys: keyHints(), primaryKey: true, info: [], playable: me().hand.map((c) => !whyNotPlayable(c)), movedSpaces: state.zombieMovedSpaces };
   const p = me();
 
   // Variant counters for the player whose turn it is.
@@ -846,6 +917,8 @@ function draw() {
     const n = all.findIndex((o) => o.x === spot.x && o.y === spot.y) + 1;
     extra.spotInfo = `spot ${n} of ${all.length}, turned ${state.pendingRotation * 90}°`;
   }
+
+  if (replay) return drawReplay(extra);
 
   const spec = !busyPanel() && mode === "play" ? pickNow() : null;
   if (spec) {
@@ -924,6 +997,7 @@ function handleMenuKey(k) {
 
 function handleKey(k) {
   if (phase === "locked") { if (k.toLowerCase() === "q" || isEnter(k) || isEsc(k)) quit(); return; }
+  if (replay) { endReplay(); return; }
   if (phase === "resume") {
     const lower = k.toLowerCase();
     if (lower === "c") continueSavedGame();

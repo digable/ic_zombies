@@ -54,6 +54,10 @@ The steps run across the top (**tile, fight, cards, roll, move, zombies, discard
 In the sidebar, the lit key is the one to press next; **Space** always does that next step. Drawing cards and moving
 the zombies happen on their own, since there's nothing to decide (`a` turns that off).
 
+When the zombies move, each move is replayed one at a time: the zombie about to move has its space lit red,
+then it's shown lit red in the space it ended up in. Any key skips the rest of the replay. For the rest
+of the turn, zombies that moved sit on a red background.
+
 ## Keys
 
 | When | Keys |
@@ -77,6 +81,7 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 | `@` (one color per player) | players; the space of the player whose turn it is flashes in their color |
 | green / grey cards in the hand | cards you can play right now / cards you can't (the card's box says why) |
 | `Z` green / `Z` red / `d` / `c` | zombie / government-enhanced zombie / dog / clown, followed by a number if several share a space |
+| a zombie on red | it moved this turn (a whole space lit red: the zombie moving right now, in the replay) |
 | red `+` (♥ in UTF-8) | heart token |
 | yellow `■` | bullet token |
 | brown `▒` | building interiors (purple `▒`: mall stores) |
