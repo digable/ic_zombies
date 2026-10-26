@@ -648,7 +648,12 @@ function cardPanel() {
   const preview = card.preview ? card.preview(p) : null;
   if (preview) wrap(preview, 44).forEach((t) => lines.push([seg(t, C.bcyan)]));
   lines.push([]);
-  const keyLine = (k, label, why) => lines.push([seg(` ${k} `, why ? C.dgrey : C.black, why ? C.black : C.brown), seg(` ${label}`, why ? C.dgrey : C.white), seg(why ? `  (${why})` : "", C.dgrey)]);
+  const keyLine = (k, label, why) => {
+    const head = [seg(` ${k} `, why ? C.dgrey : C.black, why ? C.black : C.brown), seg(` ${label}`, why ? C.dgrey : C.white)];
+    // A long reason goes on its own line so it isn't cut off at the edge of the box.
+    if (why && k.length + label.length + why.length + 6 > 44) lines.push(head, [seg(`    (${why})`, C.dgrey)]);
+    else lines.push([...head, seg(why ? `  (${why})` : "", C.dgrey)]);
+  };
   if (selected.from === "hand") {
     const why = whyNotPlayable(card);
     keyLine("p", isPage ? "stage it in front of you" : "play it", why);

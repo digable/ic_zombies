@@ -24,11 +24,11 @@ const SIDE_W = COLS - SIDE_X;            // 26
 // What each kind of ground looks like: [fill char, fg, bg]
 const GROUND = {
   "road":         [".", C.dgrey, C.black],
-  "grass":        ["\"", C.green, C.black],
+  "grass":        ["░", C.green, C.black],
   "parking":      [":", C.grey, C.black],
-  "building":     [" ", C.white, C.brown],
+  "building":     ["▒", C.black, C.brown],
   "mall hallway": [".", C.cyan, C.black],
-  "mall store":   [" ", C.white, C.magenta],
+  "mall store":   ["▒", C.black, C.magenta],
   "escalator":    ["≡", C.white, C.black],
   "water":        ["≈", C.bblue, C.blue],
   "wooded":       ["τ", C.green, C.black],
@@ -163,7 +163,12 @@ function drawMap(grid, game, state, center, extra = {}) {
         }
         continue;
       }
-      const [fill, fg, bg] = GROUND[cell.type] || [".", C.dgrey, C.black];
+      let [fill, fg, bg] = GROUND[cell.type] || [".", C.dgrey, C.black];
+      // The helipad (the way out) gets a pad texture with an H in the middle.
+      const tileHere = inPreview(sx, sy) ? preview.tile : state.board.get(`${tileOf(sx)},${tileOf(sy)}`);
+      const isPad = tileHere && tileHere.type === "helipad" && !cell.type;
+      if (isPad) { fill = "▓"; fg = C.dgrey; }
+      const padH = isPad && sx - tileOf(sx) * DIM === 1 && sy - tileOf(sy) * DIM === 1;
       const slots = [];
       const spaceKey = `${sx},${sy}`;
       state.players.forEach((p, i) => {
@@ -178,9 +183,12 @@ function drawMap(grid, game, state, center, extra = {}) {
       const tok = state.spaceTokens && state.spaceTokens.get(spaceKey);
       if (tok && tok.hearts > 0) slots.push(["♥", C.bred]);
       if (tok && tok.bullets > 0) slots.push(["■", C.yellow]);
+      if (state.useSewerTokens && state.sewerTokenSpaces && state.sewerTokenSpaces.has(spaceKey)) slots.push(["Θ", C.grey]);
       for (let i = 0; i < 3; i++) {
         const s = slots[i];
-        put(grid, gx + 1 + i, gy + 1, s ? s[0] : fill, s ? s[1] : fg, bg);
+        if (s) put(grid, gx + 1 + i, gy + 1, s[0], s[1], bg);
+        else if (padH && i === 1) put(grid, gx + 1 + i, gy + 1, "H", C.white, bg);
+        else put(grid, gx + 1 + i, gy + 1, fill, fg, bg);
       }
       if (slots.length > 3) put(grid, gx + 3, gy + 1, "+", C.white, bg);
       // Picking a space for a card: spaces you can pick are green, a chosen zombie magenta.
@@ -378,10 +386,11 @@ function drawPanel(grid, panel) {
   const H = panel.lines.length + 3;
   const y0 = Math.max(MAP_Y + 1, MAP_Y + Math.floor((MAP_ROWS - H) / 2));
   for (let y = y0; y < y0 + H; y++) for (let x = x0; x < x0 + W; x++) put(grid, x, y, " ", C.grey, C.black);
-  for (let x = x0; x < x0 + W; x++) { put(grid, x, y0, "─", C.bcyan); put(grid, x, y0 + H - 1, "─", C.bcyan); }
-  for (let y = y0; y < y0 + H; y++) { put(grid, x0, y, "│", C.bcyan); put(grid, x0 + W - 1, y, "│", C.bcyan); }
-  put(grid, x0, y0, "┌", C.bcyan); put(grid, x0 + W - 1, y0, "┐", C.bcyan);
-  put(grid, x0, y0 + H - 1, "└", C.bcyan); put(grid, x0 + W - 1, y0 + H - 1, "┘", C.bcyan);
+  // Double lines, so a pop-up never blends into the single-line walls on the map behind it.
+  for (let x = x0; x < x0 + W; x++) { put(grid, x, y0, "═", C.bcyan); put(grid, x, y0 + H - 1, "═", C.bcyan); }
+  for (let y = y0; y < y0 + H; y++) { put(grid, x0, y, "║", C.bcyan); put(grid, x0 + W - 1, y, "║", C.bcyan); }
+  put(grid, x0, y0, "╔", C.bcyan); put(grid, x0 + W - 1, y0, "╗", C.bcyan);
+  put(grid, x0, y0 + H - 1, "╚", C.bcyan); put(grid, x0 + W - 1, y0 + H - 1, "╝", C.bcyan);
   text(grid, x0 + 2, y0, ` ${panel.title} `, C.black, C.cyan, W - 4);
   panel.lines.forEach((segs, i) => {
     let x = x0 + 2;
@@ -423,9 +432,10 @@ function buildHelp() {
   sym([["d", C.bred], ["c", C.bmagenta]], "zombie dog, zombie clown");
   sym([["Z", C.bgreen], ["2", C.bgreen]], "a number = how many there");
   sym([["♥", C.bred], ["■", C.yellow]], "heart / bullet token");
-  sym([[" ", C.white, C.brown], [" ", C.white, C.brown], [" ", C.white, C.brown]], "inside a building");
+  sym([["▒", C.black, C.brown], ["▒", C.black, C.brown], ["▒", C.black, C.brown]], "inside a building");
+  sym([["▓", C.dgrey], ["H", C.white], ["Θ", C.grey]], "helipad (the exit), sewer token");
   sym([["─", C.grey], ["+", C.yellow], ["─", C.grey]], "wall with a door");
-  sym([[".", C.dgrey], ["\"", C.green], [":", C.grey]], "road, grass, parking");
+  sym([[".", C.dgrey], ["░", C.green], [":", C.grey]], "road, grass, parking");
   sym([["≈", C.bblue, C.blue], ["τ", C.green]], "water, woods");
   sym([["─", C.yellow], ["─", C.yellow], ["─", C.yellow]], "tile you're placing");
   sym([["░", C.dgrey], ["░", C.dgrey], ["░", C.dgrey]], "other spots it fits");

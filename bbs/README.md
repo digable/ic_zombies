@@ -65,7 +65,7 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 | Discard | pick a card, `d`; or `n` to keep your hand |
 | End turn | `Enter`; `v` casts the Cabin spell when you can (The End, Z4) |
 | Cards that pick a space | Rocket Launcher, Dynamite, Mine Field, Frisbee, We're Screwed, This Isn't So Bad and the rest: spaces you can pick turn green. Arrows move the cursor, `Tab` jumps to the next green space, `Enter` picks, `x` finishes or cancels |
-| Other card boxes | Zombie Dice Challenge: `1` `2` a bullet on a die, `3` `4` a heart to reroll, `Enter` accept. Air duct: `1`–`9` a store, `s` stay. Forced moves (Brain Cramp...): arrows move that player, `x` stops |
+| Pop-up boxes (double-lined) | Zombie Dice Challenge: `1` `2` a bullet on a die, `3` `4` a heart to reroll, `Enter` accept. Air duct: `1`–`9` a store, `s` stay. Forced moves (Brain Cramp...): arrows move that player, `x` stops |
 | Sewer tokens (Z6) | `o` place a token on a road, `u` drop into / climb out of the sewer |
 | Book of the Dead (Z4) | page cards: `p` stages one; `i` shows pages in front of you, then a letter and `u` to use one |
 | Expansion decks | once an expansion's gateway tile is out, `t` asks which deck to draw from |
@@ -79,11 +79,13 @@ the zombies happen on their own, since there's nothing to decide (`a` turns that
 | `Z` green / `Z` red / `d` / `c` | zombie / government-enhanced zombie / dog / clown, followed by a number if several share a space |
 | red `+` (♥ in UTF-8) | heart token |
 | yellow `■` | bullet token |
-| brown blocks | building interiors |
+| brown `▒` | building interiors (purple `▒`: mall stores) |
 | yellow `+` in a wall | door |
-| `...` `"""` `:::` | road, grass, parking |
+| `...` green `░` `:::` | road, grass, parking |
 | yellow walls / `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
 | green spaces | spaces a card lets you pick |
+| grey `▓` with an `H` in the middle | the helipad (the way out) |
+| `Θ` | a sewer token (Z6) |
 | cyan name in a tile's top wall | the tile's name, shortened to fit (plain road and woods tiles have none); the sidebar's "at" line gives the full name of where you are |
 
 ## What works
