@@ -6,6 +6,7 @@
 //   node bbs/door.js --utf8           try it in a normal terminal (VS Code, Windows Terminal)
 //   node bbs/door.js --players 2      start the new-game screen at 2 players (hot-seat)
 //   node bbs/door.js --new            skip the new-game screen (Director's Cut, no variants)
+//   node bbs/door.js --notitle        skip the title screen
 //   node bbs/door.js --name Digable   name player 1 (on the BBS this comes from DOOR32.SYS)
 //   node bbs/door.js --savedir DIR    where saved games go (see saves.js)
 //   node bbs/door.js --api URL        the zombies server for online games (default http://127.0.0.1:3000)
@@ -18,6 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const { loadEngine } = require("./engine");
 const { buildScreen, buildHelp, buildMenu, buildPrompt, wrap, num, C } = require("./screen");
+const { buildTitle } = require("./title");
 const ansi = require("./ansi");
 const saves = require("./saves");
 
@@ -80,7 +82,8 @@ const copyZombies = () => new Map([...state.zombies].map(([k, v]) => [k, { ...v 
 }
 
 // ---- door state (only the screen; the game's own state lives in `state`) ------
-let phase = "menu";       // locked | resume | confirmNew | onlineResume | menu | onlineMenu | joinCode | lobby | game
+let phase = "menu";       // title | locked | resume | confirmNew | onlineResume | menu | onlineMenu | joinCode | lobby | game
+let afterTitle = null;    // where any key on the title screen goes
 let mode = "play";        // play | look | card | items | help | deck
 let selected = null;      // { from: "hand" | "items" | "pages", index }
 let cursor = null;        // look mode: board space under the cursor
@@ -1286,6 +1289,7 @@ function setFlash(grid, flash) {
 
 function draw() {
   if (phase !== "game" || mode === "help") setFlash(null, null);
+  if (phase === "title") { paint(buildTitle()); return; }
   if (phase === "locked") {
     paint(buildPrompt({
       title: "already playing",
@@ -1438,6 +1442,7 @@ function handleMenuKey(k) {
 }
 
 function handleKey(k) {
+  if (phase === "title") { phase = afterTitle || "menu"; return; }
   if (phase === "locked") { if (k.toLowerCase() === "q" || isEnter(k) || isEsc(k)) quit(); return; }
   if (replay) { endReplay(); return; }
   if (phase === "resume") {
@@ -1733,6 +1738,8 @@ else {
   else if (savedGameInfo()) phase = "resume";
   else if (opt("new")) startNewGame();
 }
+// The title screen comes first (any key goes on to whatever was decided above); --new skips it.
+if (!opt("new") && !opt("notitle") && !process.env.ICZ_TEST_SETUP) { afterTitle = phase; phase = "title"; }
 // Testing only: run a script inside the game (e.g. deal a certain card) before the first draw.
 if (process.env.ICZ_TEST_SETUP) require("vm").runInContext(fs.readFileSync(process.env.ICZ_TEST_SETUP, "utf8"), game.ctx);
 process.stdout.write(ansi.CLEAR);

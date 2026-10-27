@@ -9,6 +9,7 @@ code as the web version**, in Node, with no copy of the rules and no old JavaScr
 | `screen.js` | Draws the game as an 80×24 grid: the map (each space is a 4×2 block with walls and doors), the players, the turn step, your hand and the key hints, plus the last two log lines. |
 | `ansi.js` | Turns that grid into ANSI color codes, converting box-drawing and block characters to the BBS character set (CP437), or plain UTF-8 with `--utf8`. |
 | `door.js` | The program itself: the new-game screen, keyboard input, the turn steps, and drawing after every change. |
+| `title.js` | The title screen: pixel art drawn with half-block characters (the letters, a survivor with a chainsaw, zombies, a graveyard). |
 | `saves.js` | Keeps one saved game per BBS user, so you can quit and continue later. |
 
 No packages to install; it only uses Node's built-in modules.
@@ -24,9 +25,16 @@ From the repo folder, in VS Code's terminal (make it at least 80×24):
 node bbs/door.js --utf8               # opens on the new-game screen
 node bbs/door.js --utf8 --players 2   # same, starting at 2 players (hot-seat)
 node bbs/door.js --utf8 --new         # skip the new-game screen: Director's Cut, no variants
+node bbs/door.js --utf8 --notitle     # skip the title screen
 ```
 
 Press `q` twice to quit (or Ctrl+C); your game picks up at the start of the turn you were on.
+
+## Title screen
+
+The door opens on an IC ZOMBIES title card (glowing letters, a survivor with a chainsaw facing down a row of
+zombies in a graveyard at night); any key goes on to
+the next screen: the new-game screen, or "welcome back" if you have a game saved or an online game going.
 
 ## New game screen
 

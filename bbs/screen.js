@@ -586,4 +586,5 @@ function buildPrompt(p) {
   return grid;
 }
 
+
 module.exports = { buildScreen, buildHelp, buildMenu, buildPrompt, wrap, num, tileLoot, blankGrid, text, put, COLS, ROWS, C, VIEW_W, VIEW_H, PLAYER_COLORS };
