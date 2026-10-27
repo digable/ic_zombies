@@ -54,6 +54,11 @@ started on the web and the other way round.
   for good (`l`). If it was your turn, you start that turn again (the server keeps the game as of the end
   of the last finished turn). Like the website, the others wait for you; there's no turn timer yet.
 - **One game at a time** still holds: online games count, so there's no local save while you're in one.
+- **Steering someone else (Brain Cramp, "Lots of running and screaming"):** when the mover rolls, the
+  controls go to the player who played the card ("You're steering!"); they move the other player with the
+  arrows and `x` to stop, then the controls go back. A fight on the way is answered by the player in it.
+  This works between BBS players; if the steering player is on the website, the mover moves themselves,
+  as on the website.
 
 The door talks to `http://127.0.0.1:3000` (the zombies service on the same machine); `--api URL` or
 `ICZ_API` points it elsewhere. Locally, run `node server.js` in another terminal first, then

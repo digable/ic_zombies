@@ -64,8 +64,16 @@ module.exports = async function handler(req, res) {
       const n = session.players.length;
       const storedIndex = session.state?.currentPlayerIndex ?? 0;
       const nextSlot = (playerSlot + 1) % n;
-      if (playerSlot !== storedIndex) return { status: 403, error: "Not your turn" };
-      if (gameState.currentPlayerIndex !== playerSlot && gameState.currentPlayerIndex !== nextSlot) {
+      // Mid-turn hand-off (BBS door): the player whose turn it is can hand the controls to another
+      // seat for a moment (Brain Cramp: the card's player steers the mover). The state they push
+      // names that seat in actingSlot; that seat may then push once to hand back, but can never
+      // change whose turn it is.
+      const actingSlot = session.state?.actingSlot;
+      const handingBack = playerSlot !== storedIndex && Number.isInteger(actingSlot) && actingSlot === playerSlot;
+      if (playerSlot !== storedIndex && !handingBack) return { status: 403, error: "Not your turn" };
+      if (handingBack) {
+        if (gameState.currentPlayerIndex !== storedIndex) return { status: 403, error: "Only the player whose turn it is can pass the turn" };
+      } else if (gameState.currentPlayerIndex !== playerSlot && gameState.currentPlayerIndex !== nextSlot) {
         return { status: 403, error: "Turn can only pass to the next player" };
       }
 

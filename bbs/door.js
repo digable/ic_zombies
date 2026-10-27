@@ -300,13 +300,102 @@ let joinBuffer = "";     // the code being typed on the join screen
 let wasWaiting = false;
 
 const online = () => !!(state.multiplayerSession && state.multiplayerSession.mode === "online");
-// It's someone else's turn in an online game: you can look around, but not act.
+
+// Who has the controls right now. Normally the player whose turn it is, but while a Brain Cramp
+// (or "Lots of running and screaming") move is being steered, the card's player does, until a
+// fight comes up, which the mover answers.
+function actorSlot() {
+  const pfm = state.pendingForcedMove;
+  if (pfm && pfm.controllerPlayerId && !state.pendingCombatDecision && !state.pendingEventChoice && !state.gameOver) {
+    const i = state.players.findIndex((pl) => pl.id === pfm.controllerPlayerId);
+    if (i >= 0) return i;
+  }
+  return state.currentPlayerIndex;
+}
+// Someone else has the controls in an online game: you can look around, but not act.
 const waiting = () => phase === "game" && online() && !state.gameOver &&
-  state.currentPlayerIndex !== state.multiplayerSession.myPlayerSlot;
+  actorSlot() !== state.multiplayerSession.myPlayerSlot;
 const myName = () => (userName || "BBS player").slice(0, 32);
 const errText = (e) => (e && (e.data && e.data.error || e.message)) || "the game server didn't answer";
 
 function stopLobbyPoll() { clearInterval(lobbyTimer); lobbyTimer = null; }
+
+// ---- handing the controls to another seat mid-turn (Brain Cramp) ----
+// The rules let one player steer another's move. Online, the mover's door pushes the game with
+// the move still pending and names the steering seat (actingSlot); that door makes the moves and
+// pushes it back. Only BBS seats can steer this way (the website doesn't know how yet), so if the
+// steering player is on the web, the mover moves themselves, like on the website.
+let seatDevices = [];                       // device id per seat, from the server's player list
+let controlMem = { actor: null, cur: null };
+const canSteer = (slot) => String(seatDevices[slot] || "").startsWith("bbs:");
+const plain = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);
+
+{
+  // Remember who steers: Brain Cramp clears its marker as the move starts, so read it first.
+  const realRoll = game.ctx.rollMovement;
+  game.ctx.rollMovement = function (...a) {
+    const p = state.players[state.currentPlayerIndex];
+    const ctl = p ? ((p.brainCramp && p.brainCramp.controllerPlayerId) || (p.movementHijack && p.movementHijack.byPlayerId) || null) : null;
+    const r = realRoll.apply(this, a);
+    if (ctl && state.pendingForcedMove && !state.pendingForcedMove.controllerPlayerId) state.pendingForcedMove.controllerPlayerId = ctl;
+    return r;
+  };
+  // Loading a pushed game: put back the half-finished move or fight it carried.
+  const realLoad = game.ctx.deserializeState;
+  game.ctx.deserializeState = function (data) {
+    realLoad(data);
+    const x = data && data.doorMidTurn;
+    if (x) {
+      if (x.forcedMove) state.pendingForcedMove = { ...x.forcedMove };
+      if (x.combat) state.pendingCombatDecision = plain(x.combat);
+      state.combatMoveResume = x.combatMoveResume ?? null;
+      state.combatZombiePhaseResume = x.combatZombiePhaseResume ?? null;
+      state.lastCombatResult = x.lastCombatResult ?? null;
+    }
+    controlMem = { actor: actorSlot(), cur: state.currentPlayerIndex };
+  };
+}
+
+async function pushHandOff(actor) {
+  const mp = state.multiplayerSession;
+  const s = call("serializeState");
+  s.actingSlot = actor;
+  s.doorMidTurn = {
+    forcedMove: plain(state.pendingForcedMove), combat: plain(state.pendingCombatDecision),
+    combatMoveResume: state.combatMoveResume ?? null, combatZombiePhaseResume: state.combatZombiePhaseResume ?? null,
+    lastCombatResult: state.lastCombatResult ?? null
+  };
+  mp.lastStateKey = `${s.turnNumber}:${s.currentPlayerIndex}:${s.step}`;
+  try {
+    await api(`/api/games/${mp.code}`, { method: "POST", body: { playerId: mp.myPlayerId, gameState: s } });
+  } catch (e) {
+    notice = `couldn't pass the controls: ${errText(e)}`;
+  }
+  if (!state.multiplayerSession) return;
+  call("startPolling");   // listen for the controls coming back (onlineTick keeps it running)
+  scheduleDraw();
+}
+
+// After every action: if the controls just moved to another seat mid-turn, send the game there.
+function onlineControls() {
+  if (phase !== "game" || !online() || state.gameOver) return;
+  const mp = state.multiplayerSession;
+  const me_ = mp.myPlayerSlot;
+  const actor = actorSlot();
+  const prev = controlMem;
+  controlMem = { actor, cur: state.currentPlayerIndex };
+  if (prev.actor !== me_ || actor === me_) return;          // only when the controls leave us
+  if (state.currentPlayerIndex !== prev.cur) return;        // a normal end of turn: the game pushes that itself
+  if (actor !== state.currentPlayerIndex && !canSteer(actor)) {
+    // The steering player is on the website: this player moves themselves, as on the web.
+    const ctl = state.players[actor];
+    state.pendingForcedMove.controllerPlayerId = null;
+    controlMem.actor = me_;
+    notice = `${ctl ? ctl.name : "they"} can't steer from the web; you move`;
+    return;
+  }
+  pushHandOff(actor);
+}
 
 function showLobby(info) {
   lobby = { players: [], status: "lobby", msg: "", busy: false, ...info };
@@ -406,6 +495,7 @@ function enterOnlineGame(session, info, alreadyLoaded = false) {
   stopLobbyPoll();
   if (!alreadyLoaded) call("deserializeState", game.get("JSON").parse(JSON.stringify(session.state)));
   const slot = session.players.findIndex((pl) => pl.id === info.playerId);
+  seatDevices = session.players.map((pl) => pl.deviceId || "");
   const st = session.state;
   state.multiplayerSession = {
     code: info.code, myPlayerId: info.playerId, myDeviceId: DEVICE_ID, myPlayerSlot: slot,
@@ -417,6 +507,7 @@ function enterOnlineGame(session, info, alreadyLoaded = false) {
   lobby = null;
   resetDoor();
   phase = "game";
+  controlMem = { actor: actorSlot(), cur: state.currentPlayerIndex };
   wasWaiting = waiting();
   if (wasWaiting) call("startPolling");
   scheduleDraw();
@@ -446,7 +537,11 @@ function onlineTick() {
   // Keep listening for the next turn (e.g. if pushing the end of our turn failed and the
   // game's own code didn't start polling).
   if (now && !state.multiplayerSession.pollInterval) call("startPolling");
-  if (wasWaiting && !now) { notice = "Your turn!"; process.stdout.write("\x07"); }
+  if (wasWaiting && !now) {
+    const steering = state.currentPlayerIndex !== state.multiplayerSession.myPlayerSlot;
+    notice = steering ? "You're steering!" : "Your turn!";
+    process.stdout.write("\x07");
+  }
   wasWaiting = now;
 }
 
@@ -1039,6 +1134,7 @@ function scheduleDraw() {
     try {
       if (!replay) autoAdvance();
       autoSave();
+      onlineControls();
       onlineTick();
       startReplay();
       draw();
@@ -1197,7 +1293,10 @@ function draw() {
   if (online()) {
     const mp = state.multiplayerSession;
     extra.info.push([`ONLINE ${mp.code}`, C.bcyan]);
-    if (waiting()) extra.info.push([`waiting for ${me().name}...`, C.yellow]);
+    if (waiting()) {
+      const who = state.players[actorSlot()];
+      extra.info.push([`waiting for ${who ? who.name : "the others"}...`, C.yellow]);
+    }
   }
 
   // Variant counters for the player whose turn it is.
@@ -1236,6 +1335,8 @@ function draw() {
     const pfm = state.pendingForcedMove;
     const t = call("getPlayerById", pfm.targetPlayerId);
     extra.info.push([(pfm.cardName || "Forced move").toUpperCase(), C.bcyan]);
+    const ctl = pfm.controllerPlayerId ? call("getPlayerById", pfm.controllerPlayerId) : null;
+    if (ctl && t && ctl.id !== t.id) extra.info.push([`${ctl.name} steers ${t.name}`, C.yellow]);
     wrap(`Move ${t ? t.name : "them"} ${pfm.remaining} more space(s). Zombies on the way must be fought.`, 26).forEach((l) => extra.info.push([l, C.white]));
     if (t) extra.center = { x: t.x, y: t.y };
   }
@@ -1403,7 +1504,7 @@ function handleKey(k) {
   if (waiting()) {
     if (/^[1-9]$/.test(k) && viewer().hand[Number(k) - 1]) { selected = { from: "hand", index: Number(k) - 1 }; mode = "card"; }
     else if (lower === "i") mode = "items";
-    else notice = "not your turn yet";
+    else notice = actorSlot() === state.currentPlayerIndex ? "not your turn yet" : `${state.players[actorSlot()].name} is steering`;
     return;
   }
 
