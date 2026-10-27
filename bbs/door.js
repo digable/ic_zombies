@@ -727,12 +727,29 @@ function describeSpace(sx, sy) {
 }
 
 // ---- drawing ---------------------------------------------------------------
+// Only the cells that changed since the last frame are sent (see ansi.renderDiff).
+// `shown` is the grid currently on the terminal; null forces a full repaint (Ctrl+L).
+let shown = null;
+function paint(grid) {
+  const out = ansi.renderDiff(shown, grid, { utf8: UTF8 });
+  shown = grid;
+  if (out.length) process.stdout.write(out);
+}
+
 // ---- replaying zombie moves ------------------------------------------------------
 // Each move shows in two frames: the zombie about to move, its whole space lit red; then the
 // zombie in the space it ended up in, lit red. Space (or any key) skips the rest.
-const REPLAY_MS = [700, 800];   // how long each frame stays up
+const REPLAY_MS = [300, 400];     // how long each frame stays up
+const REPLAY_BUDGET_MS = 4000;    // with many moves, frames shorten so the replay takes about this long
+const REPLAY_MIN_MS = 120;        // but never flash by faster than this
 let replay = null;              // { moves, i, frame }
 let replayTimer = null;
+
+function replayFrameMs(frame) {
+  const fullLength = replay.moves.length * (REPLAY_MS[0] + REPLAY_MS[1]);
+  const scale = Math.min(1, REPLAY_BUDGET_MS / fullLength);
+  return Math.max(REPLAY_MIN_MS, Math.round(REPLAY_MS[frame] * scale));
+}
 
 function startReplay() {
   if (replay || !zombieMoves.length) return;
@@ -748,7 +765,7 @@ function stepReplay(advance = true) {
   }
   clearTimeout(replayTimer);
   if (replay.i >= replay.moves.length) { endReplay(); return; }
-  replayTimer = setTimeout(() => { stepReplay(); scheduleDraw(); }, REPLAY_MS[replay.frame]);
+  replayTimer = setTimeout(() => { stepReplay(); scheduleDraw(); }, replayFrameMs(replay.frame));
 }
 
 function endReplay() {
@@ -838,7 +855,7 @@ function drawReplay(extra) {
   let grid;
   try { grid = buildScreen(game, extra); } finally { state.zombies = live; state.step = liveStep; }
   setFlash(grid, extra.flash);
-  process.stdout.write(ansi.render(grid, { utf8: UTF8 }));
+  paint(grid);
 }
 
 // ---- flashing the current player's space -------------------------------------------
@@ -865,7 +882,10 @@ function setFlash(grid, flash) {
     flashTimer = setInterval(() => {
       if (!flashCells || drawQueued) return;
       flashOn = !flashOn;
-      process.stdout.write(ansi.renderCells(flashCells.map((c) => ({ x: c.x, y: c.y, ...(flashOn ? c.on : c.off) })), { utf8: UTF8 }));
+      const cells = flashCells.map((c) => ({ x: c.x, y: c.y, ...(flashOn ? c.on : c.off) }));
+      process.stdout.write(ansi.renderCells(cells, { utf8: UTF8 }));
+      // Keep the record of what's on screen accurate, so the next paint() fixes these cells up.
+      if (shown) cells.forEach((c) => { shown[c.y][c.x] = { ch: c.ch, fg: c.fg, bg: c.bg }; });
     }, FLASH_MS);
   } else if (!flashCells && flashTimer) {
     clearInterval(flashTimer);
@@ -876,24 +896,24 @@ function setFlash(grid, flash) {
 function draw() {
   if (phase !== "game" || mode === "help") setFlash(null, null);
   if (phase === "locked") {
-    process.stdout.write(ansi.render(buildPrompt({
+    paint(buildPrompt({
       title: "already playing",
       lines: [["You already have IC Zombies open on another connection.", C.white], [""],
         ["You can only have one game going at a time. Finish or quit"], ["that one first, then come back."]],
       keys: [["q", "back to the BBS"]]
-    }), { utf8: UTF8 }));
+    }));
     return;
   }
   if (phase === "resume" || phase === "confirmNew") {
-    process.stdout.write(ansi.render(resumeScreen(), { utf8: UTF8 }));
+    paint(resumeScreen());
     return;
   }
   if (phase === "menu") {
-    process.stdout.write(ansi.render(buildMenu(menuModel()), { utf8: UTF8 }));
+    paint(buildMenu(menuModel()));
     return;
   }
   if (mode === "help") {
-    process.stdout.write(ansi.render(buildHelp(), { utf8: UTF8 }));
+    paint(buildHelp());
     return;
   }
   const extra = { keys: keyHints(), primaryKey: true, info: [], playable: me().hand.map((c) => !whyNotPlayable(c)), movedSpaces: state.zombieMovedSpaces };
@@ -962,7 +982,7 @@ function draw() {
   if (notice) extra.info.push([notice, C.yellow]);
   const grid = buildScreen(game, extra);
   setFlash(grid, extra.flash);
-  process.stdout.write(ansi.render(grid, { utf8: UTF8 }));
+  paint(grid);
 }
 
 // ---- input -----------------------------------------------------------------
@@ -1223,6 +1243,7 @@ function keysFrom(chunk) {
     if (s[i] === "\x1b" && (s[i + 1] === "[" || s[i + 1] === "O") && s[i + 2]) { out.push(s.slice(i, i + 3)); i += 2; }
     else if (s[i] === "\r" && s[i + 1] === "\n") { out.push("\r"); i += 1; }
     else if (s[i] === "\x03") out.push("CTRL_C");
+    else if (s[i] === "\x0c") out.push("CTRL_L");
     else out.push(s[i]);
   }
   return out;
@@ -1238,6 +1259,8 @@ function quit() {
 process.stdin.on("data", (chunk) => {
   for (const k of keysFrom(chunk)) {
     if (k === "CTRL_C") return quit();
+    // Ctrl+L: clear and repaint everything, for when line noise has garbled the screen
+    if (k === "CTRL_L") { shown = null; process.stdout.write(ansi.CLEAR); continue; }
     try {
       handleKey(k);
     } catch (e) {

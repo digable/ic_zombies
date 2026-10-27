@@ -55,14 +55,18 @@ In the sidebar, the lit key is the one to press next; **Space** always does that
 the zombies happen on their own, since there's nothing to decide (`a` turns that off).
 
 When the zombies move, each move is replayed one at a time: the zombie about to move has its space lit red,
-then it's shown lit red in the space it ended up in. Any key skips the rest of the replay. For the rest
+then it's shown lit red in the space it ended up in. With many zombies the frames speed up, so the
+whole replay takes about 4 seconds. Any key skips the rest of the replay.
+
+Only the parts of the screen that changed are sent after each key (usually under 100 bytes instead
+of a 5 KB full screen), which keeps the door quick on slow connections. For the rest
 of the turn, zombies that moved sit on a red background.
 
 ## Keys
 
 | When | Keys |
 |---|---|
-| Anytime | `Space` next step, `1`–`5` look at a card in your hand (up/down flips through the others; `p` plays it, `d` discards it at the discard step), `i` items in front of you (then `a` to use one), `m` look around the map with the arrow keys (your character doesn't move), `?` help, `Esc` close a box or stop looking, `q` quit (press it again to confirm) |
+| Anytime | `Space` next step, `1`–`5` look at a card in your hand (up/down flips through the others; `p` plays it, `d` discards it at the discard step), `i` items in front of you (then `a` to use one), `m` look around the map with the arrow keys (your character doesn't move), `?` help, `Esc` close a box or stop looking, `Ctrl+L` redraw the screen if it gets garbled, `q` quit (press it again to confirm) |
 | Tile | `t` draw; it shows in yellow with its zombies/hearts/bullets in the sidebar. Arrows (or `Tab`) pick a spot, `r` rotates, `Enter` places |
 | Fight | `c`; if the roll misses, a fight box shows your roll, what you need, and each option's outcome (the good choice is green): `b` bullet, `h` heart reroll, `f` First Aid Kit, `k` Lucky Shot, `1`–`9` a weapon item, `l` lose |
 | Roll / move | `r`; arrows or `w` `a` `s` `d` to move, `x` to stop early |

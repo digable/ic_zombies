@@ -61,6 +61,43 @@ function render(grid, { utf8 = false, safe = process.env.DOOR_GLYPHS !== "1" } =
   return Buffer.concat(parts);
 }
 
+// Redraw only the cells that differ from `prev`, the grid already on the terminal (null means
+// nothing is known, so everything is drawn). A keypress usually changes a handful of the
+// 1,920 cells, so this sends ~100 bytes instead of ~5 KB — it matters on slow BBS links.
+// Unchanged gaps of up to GAP_CELLS are rewritten rather than skipped, because a cursor
+// jump costs about as many bytes as a few cells.
+const GAP_CELLS = 4;
+const sameCell = (a, b) => a.ch === b.ch && a.fg === b.fg && a.bg === b.bg;
+
+function renderDiff(prev, grid, opts = {}) {
+  if (!prev) return render(grid, opts);
+  const { utf8 = false, safe = process.env.DOOR_GLYPHS !== "1" } = opts;
+  const parts = [];
+  let cur = "";
+  grid.forEach((row, y) => {
+    // Never write the bottom-right cell: on many terminals that scrolls the whole screen up.
+    const width = y === grid.length - 1 ? row.length - 1 : row.length;
+    let x = 0;
+    while (x < width) {
+      if (sameCell(prev[y][x], row[x])) { x++; continue; }
+      let end = x + 1;
+      for (let i = x + 1, gap = 0; i < width && gap <= GAP_CELLS; i++) {
+        if (sameCell(prev[y][i], row[i])) gap++;
+        else { end = i + 1; gap = 0; }
+      }
+      parts.push(Buffer.from(`\x1b[${y + 1};${x + 1}H`));
+      for (let i = x; i < end; i++) {
+        const code = sgr(row[i].fg, row[i].bg);
+        if (code !== cur) { parts.push(Buffer.from(code)); cur = code; }
+        parts.push(encodeChar(row[i].ch, utf8, safe));
+      }
+      x = end;
+    }
+  });
+  if (!parts.length) return Buffer.alloc(0);
+  return Buffer.concat([Buffer.from("\x1b[?25l"), ...parts, Buffer.from("\x1b[0m")]);
+}
+
 // Redraw just a few cells (used to flash the current player's space without a full redraw).
 function renderCells(cells, { utf8 = false, safe = process.env.DOOR_GLYPHS !== "1" } = {}) {
   const parts = [];
@@ -74,4 +111,4 @@ function renderCells(cells, { utf8 = false, safe = process.env.DOOR_GLYPHS !== "
 const CLEAR = "\x1b[0m\x1b[2J\x1b[H";
 const SHOW_CURSOR = "\x1b[0m\x1b[?25h";
 
-module.exports = { render, renderCells, CLEAR, SHOW_CURSOR };
+module.exports = { render, renderDiff, renderCells, CLEAR, SHOW_CURSOR };
