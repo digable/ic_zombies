@@ -1,12 +1,11 @@
 // POST /api/games — create a new multiplayer session
 // Returns { code, hostId }
 
-const { db } = require("./_db");
+const { db, expiresFrom } = require("./_db");
 const { checkRateLimit } = require("./_rateLimit");
 const { cors, getIp, send, err, generateCode } = require("./_helpers");
 const { randomUUID } = require("crypto");
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 module.exports = async function handler(req, res) {
   cors(res);
@@ -42,7 +41,7 @@ module.exports = async function handler(req, res) {
       await q.run(
         `INSERT INTO sessions (code, host_id, host_ip, created_by_ip, status, created_at, last_activity_at, expires_at)
          VALUES (?, ?, ?, ?, 'lobby', ?, ?, ?)`,
-        [code, hostId, ip, ip, now, now, now + SESSION_TTL_MS]
+        [code, hostId, ip, ip, now, now, expiresFrom(now)]
       );
       return { code };
     });

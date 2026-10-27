@@ -13,7 +13,8 @@ A browser-based board game adaptation of zombie survival. Draw tiles to build th
 
 - **Tile-based city building** — draw and place map tiles each turn; roads must align via compass connectors; named buildings spawn zombies and loot on placement
 - **Isometric view** — toggle 3D perspective at any time; tilt/spin sliders, zoom (0.3×–3.0×), click-drag pan; pawns counter-rotate to always face the camera; zombie dogs render as a low dog silhouette
-- **Online multiplayer** — 4-character room codes, host-controlled start, automatic state sync every 1.5 s via polling; rejoining via invite link is always supported
+- **Online multiplayer** — 4-character room codes, host-controlled start; live view: every change (tile, card, roll, move, zombie movement, log) reaches the other players within a couple of seconds; rejoining via invite link is always supported; rooms are deleted after 24 hours with no activity; BBS players can join the same rooms
+- **BBS / terminal edition** — `bbs/` runs the same game scripts in an 80×24 ANSI terminal as a Synchronet BBS door (also playable in any terminal with `node bbs/door.js --utf8`): hot-seat and online play with web players, per-user saves; see [`bbs/README.md`](bbs/README.md)
 - **Combat** — d6 + bonuses; spend bullets or hearts to reroll/boost; weapon items; mid-movement combat resolves and resumes; knockout respawns you at the nearest start tile
 - **Zombie AI** — moves toward nearest player each phase; respects walls, doors, and connectors; government-enhanced zombies move 2 spaces; zombie dogs move 2 spaces, deal ½ heart damage, and can stack 2 per subtile; zombie clowns are zone-separated to Z7 tiles only and have a unique sprite and token
 - **Event cards** — draw up to 3 per turn, play one; includes player buffs, opponent disruption, zombie manipulation, and Book of the Dead page cards (Z4)
@@ -140,14 +141,20 @@ ic_zombies/
 ├── package.json                      # npm start script
 ├── server.js                         # Self-hosting server: static files + /api routes
 ├── .github/workflows/deploy.yaml     # Deploys to zombies.sodamachine.net on push to main
+├── bbs/                              # Terminal / BBS door edition (see bbs/README.md)
+│   ├── door.js                       # The door: menus, keys, online lobby, live view
+│   ├── engine.js                     # Loads the game scripts below into Node, unchanged
+│   ├── screen.js                     # Draws the 80×24 screen (map, sidebar, pop-ups)
+│   ├── ansi.js                       # ANSI / CP437 output, sends only changed cells
+│   └── saves.js                      # Per-user saves, one-game lock, online game marker
 ├── api/
-│   ├── _db.js                        # SQLite connection, schema (sessions, rate_limit_hits), query queue
+│   ├── _db.js                        # SQLite connection, schema (sessions, rate_limit_hits), query queue, room lifetime
 │   ├── _helpers.js                   # CORS, error helpers, code generator
 │   ├── _rateLimit.js                 # Per-IP rate limiting (expiring records)
 │   ├── games.js                      # POST /api/games — create session
 │   ├── bug-report.js                 # POST /api/bug-report — create GitHub issue
 │   └── games/[code]/
-│       ├── index.js                  # GET poll + POST state push
+│       ├── index.js                  # GET poll + POST state push (incl. BBS mid-turn hand-off)
 │       ├── join.js                   # POST join session
 │       ├── start.js                  # POST start game (host only)
 │       └── leave.js                  # POST leave session
@@ -230,7 +237,7 @@ ic_zombies/
 - **3×3 subtile grid** — each map tile has a 3×3 movement grid with per-subtile walkability, walls, doors, and air ducts defined in `subTilesTemplate`
 - **Incremental board rendering** — cells are fingerprinted each render; only changed cells rebuild their DOM; global occupant map computed once per render pass; player lookups use a `Map` keyed by id
 - **CSS design tokens** — `base.css` defines all colors, spacing, and player palette as CSS custom properties (`--player-P1`, `--cell-width`, `--wall-thickness`, `--lane-color`, etc.); components reference variables, not raw values
-- **Self-hosted backend** — `server.js` (Node built-ins only) serves the game and `/api` routes; SQLite (`data/game.db`) for multiplayer sessions; bug reports become GitHub issues; polling-based sync (no WebSockets); rate-limited per IP via expiring records
+- **Self-hosted backend** — `server.js` (Node built-ins only) serves the game and `/api` routes; SQLite (`data/game.db`) for multiplayer sessions, each kept until 24 hours after its last activity; bug reports become GitHub issues; polling-based sync (no WebSockets): whoever has the controls pushes each change (bundled, at most one push every 1.5 s, in order) and everyone else polls every 1.5 s; rate-limited per IP via expiring records
 - **Zone isolation** — standalone collection tiles connect only to their own zone except through a gateway tile with a `DISABLE_ON_SOLO` connector; gateway tile unlocks the standalone deck when placed
 - **Connector rule system** — per-connector placement rules on each tile: `SAME` (same collection), `ANY` (any tile), `ONLY` (specific tile name), `DESIGNATED` (requires neighbor to have `ONLY` targeting this tile), and collection-key rules for cross-zone restrictions; bidirectional — both sides of a road connection must agree
 - **Companion tiles** — some tiles auto-place one or more tiles from the deck (or a set-aside reserve) when drawn; companions can be placed with a rotation offset relative to the main tile (e.g. Big Top 2 rotates 180° to connect N-to-N with Big Top 1); `companionOnly: true` tiles are never shuffled into any deck

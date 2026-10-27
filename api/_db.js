@@ -188,4 +188,9 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
   });
 }
 
-module.exports = { db, getSession, driverName: driver.name };
+// A game room is deleted after this long with no activity (creating, joining, leaving, starting,
+// or any move pushed by a player). Every one of those pushes the deadline out again.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const expiresFrom = (now) => now + SESSION_TTL_MS;
+
+module.exports = { db, getSession, driverName: driver.name, SESSION_TTL_MS, expiresFrom };

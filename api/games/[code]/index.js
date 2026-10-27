@@ -1,7 +1,7 @@
 // GET  /api/games/:code  — poll session (state + players + status)
 // POST /api/games/:code  — push updated game state (active player only)
 
-const { db, getSession } = require("../../_db");
+const { db, getSession, expiresFrom } = require("../../_db");
 const { checkRateLimit } = require("../../_rateLimit");
 const { cors, getIp, send, err } = require("../../_helpers");
 
@@ -78,8 +78,8 @@ module.exports = async function handler(req, res) {
       }
 
       await q.run(
-        "UPDATE sessions SET state = ?, last_activity_at = ? WHERE code = ?",
-        [stateJson, Date.now(), code]
+        "UPDATE sessions SET state = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+        [stateJson, Date.now(), expiresFrom(Date.now()), code]
       );
       return {};
     });

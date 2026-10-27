@@ -1,6 +1,6 @@
 // POST /api/games/:code/leave
 
-const { db, getSession } = require("../../_db");
+const { db, getSession, expiresFrom } = require("../../_db");
 const { cors, send, err } = require("../../_helpers");
 
 module.exports = async function handler(req, res) {
@@ -21,8 +21,8 @@ module.exports = async function handler(req, res) {
       if (session.status === "lobby") {
         const players = session.players.filter((p) => p.id !== playerId);
         await q.run(
-          "UPDATE sessions SET players = ?, last_activity_at = ? WHERE code = ?",
-          [JSON.stringify(players), Date.now(), code]
+          "UPDATE sessions SET players = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+          [JSON.stringify(players), Date.now(), expiresFrom(Date.now()), code]
         );
         return {};
       }
@@ -39,8 +39,8 @@ module.exports = async function handler(req, res) {
         // If no players remain, just end the session
         if (newPlayers.length === 0) {
           await q.run(
-            "UPDATE sessions SET status = 'done', left_log = ?, last_activity_at = ? WHERE code = ?",
-            [leftLog, Date.now(), code]
+            "UPDATE sessions SET status = 'done', left_log = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+            [leftLog, Date.now(), expiresFrom(Date.now()), code]
           );
           return {};
         }
@@ -110,8 +110,8 @@ module.exports = async function handler(req, res) {
         }
 
         await q.run(
-          "UPDATE sessions SET players = ?, state = ?, left_log = ?, last_activity_at = ? WHERE code = ?",
-          [JSON.stringify(newPlayers), newState == null ? null : JSON.stringify(newState), leftLog, Date.now(), code]
+          "UPDATE sessions SET players = ?, state = ?, left_log = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+          [JSON.stringify(newPlayers), newState == null ? null : JSON.stringify(newState), leftLog, Date.now(), expiresFrom(Date.now()), code]
         );
         return {};
       }

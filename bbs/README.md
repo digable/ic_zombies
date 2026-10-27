@@ -54,7 +54,8 @@ started on the web and the other way round.
 - **Dropped or quit:** your seat is kept. Coming back to IC Zombies asks to rejoin (`c`) or leave the game
   for good (`l`). The server keeps the game as of the last live update, so you pick up about where you
   left off (anything half-finished, like a drawn tile not yet placed or an open fight box, is redone).
-  Like the website, the others wait for you; there's no turn timer yet.
+  Like the website, the others wait for you; there's no turn timer yet. A game is deleted from the server
+  after 24 hours with no activity (no one moving, joining or leaving).
 - **Watching:** while someone else plays, the sidebar shows "updated Ns ago" (it should stay at a few
   seconds while they're doing things) and a red "server:" line if the door can't reach the game server.
 - **One game at a time** still holds: online games count, so there's no local save while you're in one.

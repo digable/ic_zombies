@@ -1,6 +1,6 @@
 // POST /api/games/:code/join
 
-const { db, getSession } = require("../../_db");
+const { db, getSession, expiresFrom } = require("../../_db");
 const { checkRateLimit } = require("../../_rateLimit");
 const { cors, getIp, send, err } = require("../../_helpers");
 const { randomUUID } = require("crypto");
@@ -45,8 +45,8 @@ module.exports = async function handler(req, res) {
       const playerId = randomUUID();
       const players = [...session.players, { id: playerId, name, deviceId: deviceId || null }];
       await q.run(
-        "UPDATE sessions SET players = ?, last_activity_at = ? WHERE code = ?",
-        [JSON.stringify(players), Date.now(), code]
+        "UPDATE sessions SET players = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+        [JSON.stringify(players), Date.now(), expiresFrom(Date.now()), code]
       );
       return { body: { playerId } };
     });

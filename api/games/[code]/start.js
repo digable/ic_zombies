@@ -1,6 +1,6 @@
 // POST /api/games/:code/start  (host only)
 
-const { db, getSession } = require("../../_db");
+const { db, getSession, expiresFrom } = require("../../_db");
 const { cors, getIp, send, err } = require("../../_helpers");
 
 const MAX_STATE_BYTES = 200 * 1024;
@@ -31,8 +31,8 @@ module.exports = async function handler(req, res) {
       if (session.players.length < 1) return { status: 409, error: "Need at least 1 player to start" };
 
       await q.run(
-        "UPDATE sessions SET status = 'playing', state = ?, last_activity_at = ? WHERE code = ?",
-        [stateJson, Date.now(), code]
+        "UPDATE sessions SET status = 'playing', state = ?, last_activity_at = ?, expires_at = ? WHERE code = ?",
+        [stateJson, Date.now(), expiresFrom(Date.now()), code]
       );
       return {};
     });
