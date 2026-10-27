@@ -294,6 +294,16 @@ game.ctx.fetch = (url, opts = {}) => fetch(API + url, {
 });
 const api = (url, opts) => call("apiFetch", url, opts);
 
+// What the screen shows about the connection while you watch: when the last update arrived, and
+// the last thing that went wrong talking to the server (the game logs those with console.warn).
+let lastUpdateAt = 0;
+let netError = null;     // { text, at }
+game.ctx.console = Object.assign(Object.create(console), {
+  warn: (...a) => { netError = { text: a.join(" "), at: Date.now() }; scheduleDraw(); }
+});
+// While watching, redraw every 2 s so "updated Ns ago" stays true (only those digits are sent).
+setInterval(() => { if (waiting()) scheduleDraw(); }, 2000);
+
 let lobby = null;        // { code, playerId, hostId, isHost, players, status, msg, busy }
 let lobbyTimer = null;
 let joinBuffer = "";     // the code being typed on the join screen
@@ -306,11 +316,18 @@ const online = () => !!(state.multiplayerSession && state.multiplayerSession.mod
 // fight comes up, which the mover answers.
 function actorSlot() {
   const pfm = state.pendingForcedMove;
-  if (pfm && pfm.controllerPlayerId && !state.pendingCombatDecision && !state.pendingEventChoice && !state.gameOver) {
-    const i = state.players.findIndex((pl) => pl.id === pfm.controllerPlayerId);
-    if (i >= 0) return i;
+  const cur = state.currentPlayerIndex;
+  if (!pfm || !pfm.controllerPlayerId || state.gameOver) return cur;
+  const slotOf = (id) => state.players.findIndex((pl) => pl.id === id);
+  // A fight on the way is answered by whoever is in it: the mover for Brain Cramp, the card's
+  // player for "Lots of running and screaming" (they're the one moving).
+  if (state.pendingCombatDecision) {
+    const i = slotOf(state.pendingCombatDecision.playerId);
+    return i >= 0 ? i : cur;
   }
-  return state.currentPlayerIndex;
+  if (state.pendingEventChoice) return cur;   // card choices can't travel between doors
+  const i = slotOf(pfm.controllerPlayerId);   // gone (left the game)? then the mover moves
+  return i >= 0 ? i : cur;
 }
 // Someone else has the controls in an online game: you can look around, but not act.
 const waiting = () => phase === "game" && online() && !state.gameOver &&
@@ -353,6 +370,19 @@ const plain = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);
       state.lastCombatResult = x.lastCombatResult ?? null;
     }
     controlMem = { actor: actorSlot(), cur: state.currentPlayerIndex };
+    lastUpdateAt = Date.now();
+    netError = null;
+  };
+}
+
+// Keep the seat list current (players can leave mid-game, which shifts seats) from every server
+// reply that includes it, e.g. the game's own polling.
+{
+  const realApiFetch = game.ctx.apiFetch;
+  game.ctx.apiFetch = async function (...a) {
+    const r = await realApiFetch.apply(this, a);
+    if (r && Array.isArray(r.players)) seatDevices = r.players.map((pl) => pl.deviceId || "");
+    return r;
   };
 }
 
@@ -372,7 +402,9 @@ game.ctx.decorateOnlinePush = (s) => {
 game.ctx.onlineCanAct = () => phase === "game" && online() && !waiting();
 
 function pushHandOff() {
-  call("queuePush", true).then(() => {
+  // Not forced: if a live push already sent this exact state (same controls), there's nothing to add,
+  // and a second push from a seat that just gave up the controls would be refused.
+  call("queuePush", false).then(() => {
     if (!state.multiplayerSession) return;
     call("startPolling");   // listen for the controls coming back (onlineTick keeps it running)
     scheduleDraw();
@@ -389,12 +421,13 @@ function onlineControls() {
   controlMem = { actor, cur: state.currentPlayerIndex };
   if (prev.actor !== me_ || actor === me_) return;          // only when the controls leave us
   if (state.currentPlayerIndex !== prev.cur) return;        // a normal end of turn: the game pushes that itself
-  if (actor !== state.currentPlayerIndex && !canSteer(actor)) {
-    // The steering player is on the website: this player moves themselves, as on the web.
-    const ctl = state.players[actor];
-    state.pendingForcedMove.controllerPlayerId = null;
-    controlMem.actor = me_;
-    notice = `${ctl ? ctl.name : "they"} can't steer from the web; you move`;
+  if (!canSteer(actor)) {
+    // That player is on the website, which can't take the controls mid-turn yet: keep playing here,
+    // as on the web.
+    const other = state.players[actor];
+    if (state.pendingForcedMove) state.pendingForcedMove.controllerPlayerId = null;
+    controlMem.actor = actorSlot();
+    notice = `${other ? other.name : "they"} is on the web; you move`;
     return;
   }
   pushHandOff();
@@ -1300,6 +1333,10 @@ function draw() {
     if (waiting()) {
       const who = state.players[actorSlot()];
       extra.info.push([`waiting for ${who ? who.name : "the others"}...`, C.yellow]);
+      if (lastUpdateAt) extra.info.push([`updated ${Math.round((Date.now() - lastUpdateAt) / 1000)}s ago`, C.dgrey]);
+    }
+    if (netError && Date.now() - netError.at < 15000) {
+      wrap(`server: ${netError.text.replace(/^[a-zA-Z]+ failed: /, "")}`, 26).slice(0, 2).forEach((l) => extra.info.push([l, C.bred]));
     }
   }
 

@@ -52,8 +52,11 @@ started on the web and the other way round.
   someone else is playing you can look around the map (`m`) and at your own cards, but not act.
   Your hand is always your own cards, never anyone else's.
 - **Dropped or quit:** your seat is kept. Coming back to IC Zombies asks to rejoin (`c`) or leave the game
-  for good (`l`). If it was your turn, you start that turn again (the server keeps the game as of the end
-  of the last finished turn). Like the website, the others wait for you; there's no turn timer yet.
+  for good (`l`). The server keeps the game as of the last live update, so you pick up about where you
+  left off (anything half-finished, like a drawn tile not yet placed or an open fight box, is redone).
+  Like the website, the others wait for you; there's no turn timer yet.
+- **Watching:** while someone else plays, the sidebar shows "updated Ns ago" (it should stay at a few
+  seconds while they're doing things) and a red "server:" line if the door can't reach the game server.
 - **One game at a time** still holds: online games count, so there's no local save while you're in one.
 - **Steering someone else (Brain Cramp, "Lots of running and screaming"):** when the mover rolls, the
   controls go to the player who played the card ("You're steering!"); they move the other player with the
