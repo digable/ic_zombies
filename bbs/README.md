@@ -33,7 +33,32 @@ Press `q` twice to quit (or Ctrl+C); your game picks up at the start of the turn
 Pick the number of players (left/right), tick collections with their letters, and tick variant rules with
 `x` (Guts), `y` (Sewer tokens), `z` (Dodge). It follows the web setup's rules: Six Feet Under turns on
 Director's Cut, mixing two expansions turns on Director's Cut, and School's Out / Six Feet Under / Jailbreak
-turn on their variant. Send in the Clowns stays off until it's finished on the web. `Enter` starts.
+turn on their variant. Send in the Clowns stays off until it's finished on the web. `Enter` starts a game
+on this keyboard (hot-seat); `o` is for online games (below).
+
+## Online games
+
+Players on different BBS nodes, and on the website, can play the same game. It uses the same server and
+rules as the website's online rooms (`/api/games` on the zombies service), so a BBS player can join a game
+started on the web and the other way round.
+
+- **Host:** on the new-game screen pick collections and variants, then `o`, `h`. You get a 4-letter code
+  and a lobby that lists everyone who joins. Press `Enter` to start once at least one other person is in.
+- **Join from the BBS:** IC Zombies, `o`, `j`, type the code, `Enter`.
+- **Join from the web:** `zombies.sodamachine.net/?game=CODE` (or the Join box on the site).
+- **Playing:** on your turn you play as usual. When you end your turn it goes to the server, and the next
+  player gets it (the BBS beeps and says "Your turn!"). While someone else is playing you can look around
+  the map (`m`) and at your own cards, but not act; the screen updates when their turn ends.
+  Your hand is always your own cards, never anyone else's.
+- **Dropped or quit:** your seat is kept. Coming back to IC Zombies asks to rejoin (`c`) or leave the game
+  for good (`l`). If it was your turn, you start that turn again (the server keeps the game as of the end
+  of the last finished turn). Like the website, the others wait for you; there's no turn timer yet.
+- **One game at a time** still holds: online games count, so there's no local save while you're in one.
+
+The door talks to `http://127.0.0.1:3000` (the zombies service on the same machine); `--api URL` or
+`ICZ_API` points it elsewhere. Locally, run `node server.js` in another terminal first, then
+`node bbs/door.js --utf8 --api http://127.0.0.1:3000`. All that's stored locally is which game you're in
+(`<handle>.online.json` next to the saves).
 
 ## Saving
 
@@ -101,11 +126,8 @@ of the turn, zombies that moved sit on a red background.
 
 The whole game: every collection that's playable on the web (with their tile decks, event cards and
 variants), every card, including the ones that pick a space on the board, all the pop-up choices, the
-Cabin spell, sewer tokens, hot-seat play for up to the game's maximum, and saving. The game's own rules
-decide everything, exactly as on the web.
-
-**Not yet:** online multiplayer. That can come next by talking to the same `/api/games` server the website
-uses, so BBS and web players could share a game.
+Cabin spell, sewer tokens, hot-seat play for up to the game's maximum, saving, and online games with
+other BBS and web players. The game's own rules decide everything, exactly as on the web.
 
 **Testing hook:** `ICZ_TEST_SETUP=file.js` runs that script inside the game right after setup (to deal a
 certain card, say). Only someone who can set environment variables on the server can use it.

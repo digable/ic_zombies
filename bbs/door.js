@@ -8,6 +8,7 @@
 //   node bbs/door.js --new            skip the new-game screen (Director's Cut, no variants)
 //   node bbs/door.js --name Digable   name player 1 (on the BBS this comes from DOOR32.SYS)
 //   node bbs/door.js --savedir DIR    where saved games go (see saves.js)
+//   node bbs/door.js --api URL        the zombies server for online games (default http://127.0.0.1:3000)
 //
 // Synchronet runs it as an external program with standard input/output (see bbs/README.md).
 
@@ -79,7 +80,7 @@ const copyZombies = () => new Map([...state.zombies].map(([k, v]) => [k, { ...v 
 }
 
 // ---- door state (only the screen; the game's own state lives in `state`) ------
-let phase = "menu";       // locked | resume | confirmNew | menu | game
+let phase = "menu";       // locked | resume | confirmNew | onlineResume | menu | onlineMenu | joinCode | lobby | game
 let mode = "play";        // play | look | card | items | help | deck
 let selected = null;      // { from: "hand" | "items" | "pages", index }
 let cursor = null;        // look mode: board space under the cursor
@@ -90,6 +91,10 @@ let autoSteps = true;     // draw cards and move zombies automatically
 let lastSaveSig = "";
 
 const me = () => state.players[state.currentPlayerIndex];
+// Whose hand and items the screen shows: in an online game always your own (never another
+// player's cards); otherwise the player whose turn it is.
+const viewer = () => (state.multiplayerSession && state.multiplayerSession.mode === "online"
+  ? state.players[state.multiplayerSession.myPlayerSlot] || me() : me());
 const seg = (t, fg = C.grey, bg = C.black) => [t, fg, bg];
 
 // ---- new-game screen -------------------------------------------------------------
@@ -256,13 +261,263 @@ const atTurnStart = () => phase === "game" && state.players.length && state.step
   !call("hasPendingState") && !state.zombieAnimationTimer;
 
 function autoSave() {
-  if (phase !== "game") return false;
+  if (phase !== "game" || online()) return false;   // online games are kept on the server
   if (state.gameOver) { saves.removeSave(SAVE_DIR, userName); return false; }
   if (!atTurnStart()) return false;
   const sig = saveSig();
   if (sig === lastSaveSig) return false;
   lastSaveSig = sig;
   return saves.writeSave(SAVE_DIR, userName, { game: call("serializeState") });
+}
+
+// ---- online games ------------------------------------------------------------------
+// Online games use the same server and rules as the website's online rooms (/api/games), so BBS
+// and web players can share a game. The game's own multiplayer code does the turn hand-off:
+// when you end your turn it pushes the game to the server, and while it's someone else's turn it
+// polls every 1.5 s and loads the new state. The door adds the lobby screens and keeps your keys
+// to looking around while you wait. Only { code, playerId, hostId } is kept locally, for rejoining.
+//
+// Server: --api URL, else $ICZ_API, else http://127.0.0.1:3000 (the zombies service on the Atom).
+const API = (val("api") || process.env.ICZ_API || "http://127.0.0.1:3000").replace(/\/+$/, "");
+const ME_TAG = saves.slugOf(userName);
+const DEVICE_ID = `bbs:${ME_TAG}`;   // the same every time, so the server lets this user rejoin their seat
+const LOBBY_POLL_MS = 1500;
+
+// The game's apiFetch() calls fetch("/api/games/..."); send that to the zombies server. The server
+// rate-limits per address and every BBS player connects from 127.0.0.1, so each user gets their own
+// tag in X-Forwarded-For (the server trusts that header from local connections only).
+process.removeAllListeners("warning");   // Node 18 prints "fetch is experimental" otherwise
+game.ctx.fetch = (url, opts = {}) => fetch(API + url, {
+  ...opts,
+  headers: { ...(opts.headers || {}), "X-Forwarded-For": `bbs-${ME_TAG}` },
+  signal: AbortSignal.timeout(10000)
+});
+const api = (url, opts) => call("apiFetch", url, opts);
+
+let lobby = null;        // { code, playerId, hostId, isHost, players, status, msg, busy }
+let lobbyTimer = null;
+let joinBuffer = "";     // the code being typed on the join screen
+let wasWaiting = false;
+
+const online = () => !!(state.multiplayerSession && state.multiplayerSession.mode === "online");
+// It's someone else's turn in an online game: you can look around, but not act.
+const waiting = () => phase === "game" && online() && !state.gameOver &&
+  state.currentPlayerIndex !== state.multiplayerSession.myPlayerSlot;
+const myName = () => (userName || "BBS player").slice(0, 32);
+const errText = (e) => (e && (e.data && e.data.error || e.message)) || "the game server didn't answer";
+
+function stopLobbyPoll() { clearInterval(lobbyTimer); lobbyTimer = null; }
+
+function showLobby(info) {
+  lobby = { players: [], status: "lobby", msg: "", busy: false, ...info };
+  phase = "lobby";
+  stopLobbyPoll();
+  lobbyTimer = setInterval(pollLobby, LOBBY_POLL_MS);
+  pollLobby();
+}
+
+async function pollLobby() {
+  if (!lobby || phase !== "lobby") return stopLobbyPoll();
+  try {
+    const session = await api(`/api/games/${lobby.code}`);
+    if (!lobby) return;
+    lobby.players = session.players || [];
+    lobby.status = session.status;
+    if (session.status === "playing" && session.state) enterOnlineGame(session, lobby);
+    else if (session.status === "done") endOnline("That game has ended.");
+  } catch (e) {
+    if (lobby) lobby.msg = e.status === 404 ? "That game no longer exists." : `Can't reach the game server: ${errText(e)}`;
+  }
+  scheduleDraw();
+}
+
+async function hostOnline() {
+  if (!menu.on.size || !collKeys.some((k) => menu.on.has(k) && mapCounts[k])) {
+    menu.notice = "Pick at least one collection with map tiles.";
+    return;
+  }
+  menu.notice = "Creating an online game...";
+  scheduleDraw();
+  try {
+    const { code, hostId } = await api("/api/games", { method: "POST" });
+    const { playerId } = await api(`/api/games/${code}/join`, { method: "POST", body: { displayName: myName(), deviceId: DEVICE_ID } });
+    saves.writeOnline(SAVE_DIR, userName, { code, playerId, hostId });
+    menu.notice = "";
+    showLobby({ code, playerId, hostId, isHost: true });
+  } catch (e) {
+    menu.notice = `Couldn't create the game: ${errText(e)}`;
+  }
+  scheduleDraw();
+}
+
+// Join by code, or rejoin a game you're already in (the server knows this user's device id).
+async function joinOnline(code, known = {}) {
+  code = String(code || "").toUpperCase();
+  menu.notice = `Joining ${code}...`;
+  scheduleDraw();
+  try {
+    const { playerId } = await api(`/api/games/${code}/join`, { method: "POST", body: { displayName: myName(), deviceId: DEVICE_ID } });
+    const info = { code, playerId, hostId: known.hostId || null, isHost: !!known.hostId };
+    saves.writeOnline(SAVE_DIR, userName, { code, playerId, hostId: info.hostId });
+    menu.notice = "";
+    const session = await api(`/api/games/${code}`);
+    if (session.status === "playing" && session.state) enterOnlineGame(session, info);
+    else showLobby(info);
+  } catch (e) {
+    if (e.status === 404 || e.status === 409) saves.removeOnline(SAVE_DIR, userName);
+    menu.notice = e.status === 404 ? `There's no game ${code}.` : `Couldn't join ${code}: ${errText(e)}`;
+    phase = "menu";
+  }
+  scheduleDraw();
+}
+
+// Host only: set up the game with the new-game screen's settings and everyone in the lobby.
+async function startOnline() {
+  if (!lobby || !lobby.isHost || lobby.busy) return;
+  if (lobby.players.length < 2) { lobby.msg = "Waiting for at least one more player to join."; return; }
+  lobby.busy = true;
+  lobby.msg = "Starting...";
+  try {
+    const session = await api(`/api/games/${lobby.code}`);
+    const players = session.players;
+    PENDING_KEYS.forEach((k) => { state[k] = null; });
+    state.useGuts = menu.guts;
+    state.useSewerTokens = menu.sewer;
+    state.useDodge = menu.dodge;
+    call("setupGame", players.length, filtersFor(mapCounts), filtersFor(eventCounts));
+    players.forEach((pl, i) => {
+      if (!state.players[i]) return;
+      const old = state.players[i].name;
+      state.players[i].name = pl.name;
+      state.logs.forEach((l) => { l.text = l.text.split(old).join(pl.name); });
+    });
+    state.gameActive = true;
+    const initial = call("serializeState");
+    await api(`/api/games/${lobby.code}/start`, { method: "POST", body: { hostId: lobby.hostId, gameState: initial } });
+    enterOnlineGame({ players, state: initial }, lobby, true);
+  } catch (e) {
+    if (lobby) { lobby.msg = `Couldn't start: ${errText(e)}`; lobby.busy = false; }
+  }
+  scheduleDraw();
+}
+
+// Load the server's game and hand the turn-passing over to the game's own multiplayer code.
+function enterOnlineGame(session, info, alreadyLoaded = false) {
+  stopLobbyPoll();
+  if (!alreadyLoaded) call("deserializeState", game.get("JSON").parse(JSON.stringify(session.state)));
+  const slot = session.players.findIndex((pl) => pl.id === info.playerId);
+  const st = session.state;
+  state.multiplayerSession = {
+    code: info.code, myPlayerId: info.playerId, myDeviceId: DEVICE_ID, myPlayerSlot: slot,
+    isHost: !!info.isHost, hostId: info.hostId || null, mode: "online", pollInterval: null,
+    gameStarted: true, lastStateKey: `${st.turnNumber}:${st.currentPlayerIndex}:${st.step}`,
+    lastPlayerCount: session.players.length
+  };
+  state.gameActive = true;
+  lobby = null;
+  resetDoor();
+  phase = "game";
+  wasWaiting = waiting();
+  if (wasWaiting) call("startPolling");
+  scheduleDraw();
+}
+
+// Leave for good (the seat is given up; the others carry on).
+async function leaveOnline(code, playerId) {
+  try { await api(`/api/games/${code}/leave`, { method: "POST", body: { playerId } }); } catch { /* best effort */ }
+  saves.removeOnline(SAVE_DIR, userName);
+}
+
+function endOnline(msg) {
+  stopLobbyPoll();
+  if (state.multiplayerSession) call("stopPolling");
+  state.multiplayerSession = null;
+  saves.removeOnline(SAVE_DIR, userName);
+  lobby = null;
+  menu.notice = msg || "";
+  phase = "menu";
+}
+
+// Called on every draw: notice when the turn comes round, and forget a finished game.
+function onlineTick() {
+  if (phase !== "game" || !online()) return;
+  if (state.gameOver) { if (saves.readOnline(SAVE_DIR, userName)) saves.removeOnline(SAVE_DIR, userName); return; }
+  const now = waiting();
+  // Keep listening for the next turn (e.g. if pushing the end of our turn failed and the
+  // game's own code didn't start polling).
+  if (now && !state.multiplayerSession.pollInterval) call("startPolling");
+  if (wasWaiting && !now) { notice = "Your turn!"; process.stdout.write("\x07"); }
+  wasWaiting = now;
+}
+
+function lobbyScreen() {
+  const l = lobby;
+  const lines = [
+    ["Game code:  " + l.code, C.yellow],
+    [""],
+    ["Others join with this code: on the BBS, IC Zombies then j;"],
+    [`on the web, zombies.sodamachine.net/?game=${l.code}`],
+    [""],
+    [`Players (${l.players.length} of 6):`, C.bcyan]
+  ];
+  l.players.forEach((pl, i) => lines.push([`  ${i + 1}. ${pl.name}${pl.id === l.playerId ? "  (you)" : ""}${i === 0 ? "  (host)" : ""}`, C.white]));
+  if (!l.players.length) lines.push(["  (loading...)", C.dgrey]);
+  lines.push([""]);
+  lines.push([l.msg || (l.isHost ? "Press Enter when everyone's in." : "Waiting for the host to start..."), l.msg ? C.yellow : C.grey]);
+  const keys = l.isHost ? [["Enter", "start the game"], ["q", "leave the lobby"]] : [["q", "leave the lobby"]];
+  return buildPrompt({ title: "online game lobby", lines, keys });
+}
+
+function joinScreen() {
+  return buildPrompt({
+    title: "join an online game",
+    lines: [["Type the 4-letter game code from whoever is hosting:", C.white], [""],
+      [`  > ${joinBuffer}${"_".repeat(4 - joinBuffer.length)}`, C.yellow], [""],
+      [menu.notice || "", C.yellow]],
+    keys: [["Enter", "join"], ["Esc", "back"]]
+  });
+}
+
+function handleLobbyKey(k) {
+  if (isEnter(k)) return startOnline();
+  if (k.toLowerCase() === "q" || isEsc(k)) {
+    const { code, playerId } = lobby;
+    stopLobbyPoll();
+    lobby = null;
+    phase = "menu";
+    menu.notice = "Left the lobby.";
+    leaveOnline(code, playerId).then(scheduleDraw);
+  }
+}
+
+function handleJoinKey(k) {
+  if (isEsc(k)) { phase = "menu"; menu.notice = ""; return; }
+  if (k === "\x7f" || k === "\b") { joinBuffer = joinBuffer.slice(0, -1); return; }
+  if (isEnter(k)) {
+    if (joinBuffer.length !== 4) { menu.notice = "Game codes are 4 letters and numbers."; return; }
+    joinOnline(joinBuffer);
+    return;
+  }
+  if (/^[a-z0-9]$/i.test(k) && joinBuffer.length < 4) { joinBuffer += k.toUpperCase(); menu.notice = ""; }
+}
+
+// "You're in an online game" screen, shown at start-up instead of the local continue screen.
+function onlineResumeScreen(m) {
+  return buildPrompt({
+    title: "welcome back",
+    lines: [["You're in an online game.", C.white], [""], [`Game code: ${m.code}${m.hostId ? "  (you're the host)" : ""}`, C.yellow],
+      ["The other players may be waiting on you."], [""], [menu.notice || "", C.yellow]],
+    keys: [["c", "rejoin the game"], ["l", "leave it for good (your seat is given up)"], ["q", "quit"]]
+  });
+}
+
+function handleOnlineResumeKey(k) {
+  const m = saves.readOnline(SAVE_DIR, userName);
+  const lower = k.toLowerCase();
+  if (!m) { phase = "menu"; return; }
+  if (lower === "c") joinOnline(m.code, m);
+  else if (lower === "l") { leaveOnline(m.code, m.playerId).then(() => { menu.notice = `Left game ${m.code}.`; phase = "menu"; scheduleDraw(); }); }
+  else if (lower === "q") quit();
 }
 
 // ---- choosing where a drawn tile goes ------------------------------------------
@@ -491,7 +746,7 @@ function cycleTarget(spec, step) {
 // ---- what's waiting on the player ---------------------------------------------
 const busyPanel = () => state.gameOver || state.pendingEventChoice || state.pendingCombatDecision ||
   state.pendingZombieDiceChallenge || state.pendingDuctChoice;
-const busy = () => busyPanel() || !!pickNow() || state.pendingForcedMove;
+const busy = () => waiting() || busyPanel() || !!pickNow() || state.pendingForcedMove;
 
 // What Space does right now: [label, action], or null.
 function nextAction() {
@@ -629,9 +884,10 @@ function deckPanel() {
 
 // Why a card in hand can't be played right now ("" if it can). Same checks as the web hand.
 function whyNotPlayable(card) {
-  const p = me();
+  const p = viewer();
   const isPage = card.cardType === CARD_TYPE.BOTD_PAGE;
   if (state.gameOver) return "the game is over";
+  if (waiting()) return "it's not your turn";
   if (busy()) return "finish what's on screen first";
   if (p.eventUsedThisRound) return "you've already played a card this turn";
   if (p.cannotPlayCardTurns > 0) return "you can't play cards this turn";
@@ -649,7 +905,7 @@ function whyNotPlayable(card) {
 }
 
 function cardPanel() {
-  const p = me();
+  const p = viewer();
   const list = selected.from === "items" ? p.items : selected.from === "pages" ? p.botdPages : p.hand;
   const card = list[selected.index];
   if (!card) { mode = "play"; selected = null; return null; }
@@ -684,7 +940,7 @@ function cardPanel() {
 }
 
 function itemsPanel() {
-  const p = me();
+  const p = viewer();
   const pages = p.botdPages || [];
   const lines = p.items.length || pages.length ? [] : [[seg("Nothing in front of you yet.", C.dgrey)]];
   p.items.slice(0, 9).forEach((c, i) => lines.push([seg(` ${i + 1} `, C.black, C.brown), seg(` ${c.name}`, C.white)]));
@@ -783,6 +1039,7 @@ function scheduleDraw() {
     try {
       if (!replay) autoAdvance();
       autoSave();
+      onlineTick();
       startReplay();
       draw();
     } catch (e) {
@@ -797,6 +1054,7 @@ function keyHints() {
   if (mode === "card") return [["up/down", "other cards"], ["Esc", "back"]];
   if (mode === "deck") return [["1-9", "pick a deck"], ["Esc", "back"]];
   if (state.gameOver) return [["n", "new game"], ["q", "quit"]];
+  if (waiting()) return [["m", "look around"], ["1-5", "card details"], ["i", "items"], ["?", "help"], ["q", "quit (rejoin later)"]];
   if (state.pendingCombatDecision) return [["b h l", "choose in the fight box"]];
   if (state.pendingEventChoice) return [["1-9", "choose an option"]];
   if (state.pendingZombieDiceChallenge) return [["Enter", "accept the dice"], ["1-4", "spend a bullet / heart"]];
@@ -908,6 +1166,23 @@ function draw() {
     paint(resumeScreen());
     return;
   }
+  if (phase === "onlineResume") {
+    const m = saves.readOnline(SAVE_DIR, userName);
+    if (m) { paint(onlineResumeScreen(m)); return; }
+    phase = "menu";
+  }
+  if (phase === "onlineMenu") {
+    paint(buildPrompt({
+      title: "online game",
+      lines: [["Play with people on other BBS nodes or on the website.", C.white], [""],
+        ["Hosting uses the collections and variant rules you picked on the"], ["new-game screen; everyone who joins with the code gets a seat."],
+        [""], [menu.notice || "", C.yellow]],
+      keys: [["h", "host a game"], ["j", "join a game with a code"], ["Esc", "back"]]
+    }));
+    return;
+  }
+  if (phase === "joinCode") { paint(joinScreen()); return; }
+  if (phase === "lobby" && lobby) { paint(lobbyScreen()); return; }
   if (phase === "menu") {
     paint(buildMenu(menuModel()));
     return;
@@ -916,8 +1191,14 @@ function draw() {
     paint(buildHelp());
     return;
   }
-  const extra = { keys: keyHints(), primaryKey: true, info: [], playable: me().hand.map((c) => !whyNotPlayable(c)), movedSpaces: state.zombieMovedSpaces };
+  const extra = { keys: keyHints(), primaryKey: true, info: [], playable: viewer().hand.map((c) => !whyNotPlayable(c)), viewer: viewer(), movedSpaces: state.zombieMovedSpaces };
   const p = me();
+
+  if (online()) {
+    const mp = state.multiplayerSession;
+    extra.info.push([`ONLINE ${mp.code}`, C.bcyan]);
+    if (waiting()) extra.info.push([`waiting for ${me().name}...`, C.yellow]);
+  }
 
   // Variant counters for the player whose turn it is.
   const extras = [];
@@ -1005,6 +1286,7 @@ function handleMenuKey(k) {
   else if (dir === "W" || dir === "S" || k === "-") menu.players = Math.max(1, menu.players - 1);
   else if (/^[1-9]$/.test(k)) menu.players = Math.max(1, Math.min(MAX_PLAYERS, Number(k)));
   else if (isEnter(k)) startNewGame();
+  else if (lower === "o") { phase = "onlineMenu"; }
   else {
     const v = VARIANTS.find(([letter]) => letter === lower);
     if (v) { menu[v[1]] = !menu[v[1]]; return; }
@@ -1028,6 +1310,16 @@ function handleKey(k) {
     else phase = "resume";
     return;
   }
+  if (phase === "onlineResume") return handleOnlineResumeKey(k);
+  if (phase === "onlineMenu") {
+    const lower = k.toLowerCase();
+    if (lower === "h") { phase = "menu"; hostOnline(); }
+    else if (lower === "j") { joinBuffer = ""; menu.notice = ""; phase = "joinCode"; }
+    else if (isEsc(k) || lower === "q") { menu.notice = ""; phase = "menu"; }
+    return;
+  }
+  if (phase === "joinCode") return handleJoinKey(k);
+  if (phase === "lobby") return handleLobbyKey(k);
   if (phase === "menu") return handleMenuKey(k);
   notice = "";
   if (k !== "q" && k !== "Q") quitArmed = false;
@@ -1061,35 +1353,35 @@ function handleKey(k) {
     if (isEsc(k)) { mode = "play"; selected = null; return; }
     // Up/down (or left/right) flips through the other cards in the same list.
     if (dir) {
-      const p = me();
+      const p = viewer();
       const list = selected.from === "items" ? p.items : selected.from === "pages" ? p.botdPages : p.hand;
       if (list.length) selected.index = (selected.index + (dir === "N" || dir === "W" ? -1 : 1) + list.length) % list.length;
       return;
     }
-    if (/^[1-9]$/.test(k) && selected.from === "hand" && me().hand[Number(k) - 1]) { selected.index = Number(k) - 1; return; }
+    if (/^[1-9]$/.test(k) && selected.from === "hand" && viewer().hand[Number(k) - 1]) { selected.index = Number(k) - 1; return; }
     const i = selected.index;
-    const card = selected.from === "hand" ? me().hand[i] : null;
+    const card = selected.from === "hand" ? viewer().hand[i] : null;
     if (selected.from === "hand" && lower === "p" && !busy()) {
       mode = "play"; selected = null;
       if (card && card.cardType === CARD_TYPE.BOTD_PAGE) call("stagePage", i);
       else call("playEvent", i);
       return;
     }
-    if (selected.from === "hand" && lower === "d" && state.step === STEP.DISCARD) {
+    if (selected.from === "hand" && lower === "d" && state.step === STEP.DISCARD && !waiting()) {
       state.selectedHandIndex = i;
       mode = "play"; selected = null;
       call("discardSelected");
       return;
     }
-    if (selected.from === "pages" && lower === "u") { mode = "play"; selected = null; call("usePage", i); return; }
-    if (selected.from === "items" && lower === "a") { mode = "play"; selected = null; call("activateItem", i); return; }
+    if (selected.from === "pages" && lower === "u" && !waiting()) { mode = "play"; selected = null; call("usePage", i); return; }
+    if (selected.from === "items" && lower === "a" && !waiting()) { mode = "play"; selected = null; call("activateItem", i); return; }
     return;
   }
   if (mode === "items") {
     if (isEsc(k)) { mode = "play"; return; }
-    if (/^[1-9]$/.test(k) && me().items[Number(k) - 1]) { selected = { from: "items", index: Number(k) - 1 }; mode = "card"; }
+    if (/^[1-9]$/.test(k) && viewer().items[Number(k) - 1]) { selected = { from: "items", index: Number(k) - 1 }; mode = "card"; }
     const pi = "uvwxyz".indexOf(lower);
-    if (pi >= 0 && (me().botdPages || [])[pi]) { selected = { from: "pages", index: pi }; mode = "card"; }
+    if (pi >= 0 && (viewer().botdPages || [])[pi]) { selected = { from: "pages", index: pi }; mode = "card"; }
     return;
   }
   if (mode === "deck") {
@@ -1100,7 +1392,18 @@ function handleKey(k) {
   }
 
   if (state.gameOver) {
-    if (lower === "n") { saves.removeSave(SAVE_DIR, userName); phase = "menu"; }
+    if (lower === "n") {
+      if (online()) endOnline(); else saves.removeSave(SAVE_DIR, userName);
+      phase = "menu";
+    }
+    return;
+  }
+
+  // Someone else's turn online: you can look at the map and your own cards, nothing else.
+  if (waiting()) {
+    if (/^[1-9]$/.test(k) && viewer().hand[Number(k) - 1]) { selected = { from: "hand", index: Number(k) - 1 }; mode = "card"; }
+    else if (lower === "i") mode = "items";
+    else notice = "not your turn yet";
     return;
   }
 
@@ -1250,8 +1553,10 @@ function keysFrom(chunk) {
 }
 
 function quit() {
-  const kept = phase === "game" && !state.gameOver && savedGameInfo();
+  const m = saves.readOnline(SAVE_DIR, userName);
+  const kept = !m && phase === "game" && !state.gameOver && savedGameInfo();
   process.stdout.write(ansi.CLEAR + ansi.SHOW_CURSOR + "Thanks for playing IC Zombies.\r\n" +
+    (m ? `You're still in online game ${m.code}; come back to IC Zombies to rejoin.\r\n` : "") +
     (kept ? `Your game is saved as of the start of turn ${state.turnNumber}; you'll be asked to continue it next time.\r\n` : ""));
   process.exit(0);
 }
@@ -1282,7 +1587,8 @@ process.stdin.resume();
 if (!saves.takeLock(SAVE_DIR, userName)) phase = "locked";
 else {
   process.on("exit", () => saves.dropLock(SAVE_DIR, userName));
-  if (savedGameInfo()) phase = "resume";
+  if (saves.readOnline(SAVE_DIR, userName)) phase = "onlineResume";
+  else if (savedGameInfo()) phase = "resume";
   else if (opt("new")) startNewGame();
 }
 // Testing only: run a script inside the game (e.g. deal a certain card) before the first draw.

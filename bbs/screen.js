@@ -331,6 +331,7 @@ function tileLoot(tile) {
 
 function drawSidebar(grid, game, state, extra) {
   const p = state.players[state.currentPlayerIndex];
+  const hp = extra.viewer || p;              // whose hand and items to list (online: always your own)
   let y = MAP_Y;
   const LAST = ROWS - 3;                     // the sidebar stops above the two log lines
   const line = (s, fg = C.grey, bg = C.black) => { if (y <= LAST) text(grid, SIDE_X, y, s, fg, bg, SIDE_W); y++; };
@@ -372,15 +373,15 @@ function drawSidebar(grid, game, state, extra) {
   }
   (extra.info || []).forEach(([t, fg]) => line(t, fg));
 
-  rule(p.hand.length ? "hand: green = playable" : "hand");
-  if (!p.hand.length) line("(empty)", C.dgrey);
+  rule(hp.hand.length ? "hand: green = playable" : "hand");
+  if (!hp.hand.length) line("(empty)", C.dgrey);
   // Cards you can play right now are bright green; the rest are dark grey.
-  p.hand.slice(0, 6).forEach((card, i) => {
+  hp.hand.slice(0, 6).forEach((card, i) => {
     const sel = extra.selectedCard === i;
     const ok = extra.playable ? extra.playable[i] : true;
     line(`${i + 1} ${card.name}`, sel ? C.black : ok ? C.bgreen : C.dgrey, sel ? (ok ? C.green : C.grey) : C.black);
   });
-  if (p.items.length) line(`i  items in front of you: ${p.items.length}`, C.dgrey);
+  if (hp.items.length) line(`i  items in front of you: ${hp.items.length}`, C.dgrey);
 
   rule("keys");
   (extra.keys || []).forEach(([key, what], i) => {
@@ -559,7 +560,8 @@ function buildMenu(m) {
     text(grid, x + k.length + 3, y, what, primary ? C.white : C.grey);
     x += k.length + what.length + 5;
   };
-  key("Enter", "start the game", true);
+  key("Enter", "start (same keyboard)", true);
+  key("o", "online game", false);
   key("q", "quit", false);
   return grid;
 }

@@ -77,8 +77,32 @@ function dropLock(dir, who) {
   try { if (Number(fs.readFileSync(file, "utf8")) === process.pid) fs.unlinkSync(file); } catch { /* already gone */ }
 }
 
+// Online games live on the zombies server, not here. All that's kept locally is which game the
+// user is in: { code, playerId, hostId }, so they can rejoin after a dropped connection.
+const onlineFor = (dir, who) => fileFor(dir, who).replace(/\.json$/, ".online.json");
+
+function readOnline(dir, who) {
+  try { return JSON.parse(fs.readFileSync(onlineFor(dir, who), "utf8")); } catch { return null; }
+}
+
+function writeOnline(dir, who, data) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(onlineFor(dir, who), JSON.stringify(data));
+  } catch (e) {
+    process.stderr.write(`online marker failed: ${e.message}\n`);
+  }
+}
+
+function removeOnline(dir, who) {
+  try { fs.unlinkSync(onlineFor(dir, who)); } catch { /* nothing to remove */ }
+}
+
+// A short, stable tag for this user (file names, the server's per-player rate limits).
+const slugOf = (who) => String(who || "local").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "local";
+
 function removeSave(dir, who) {
   try { fs.unlinkSync(fileFor(dir, who)); } catch { /* nothing to remove */ }
 }
 
-module.exports = { saveDir, readSave, writeSave, removeSave, takeLock, dropLock };
+module.exports = { saveDir, readSave, writeSave, removeSave, takeLock, dropLock, readOnline, writeOnline, removeOnline, slugOf };
