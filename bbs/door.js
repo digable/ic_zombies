@@ -208,7 +208,7 @@ function namePlayerOne() {
   state.logs.forEach((l) => { l.text = l.text.split(old).join(userName); });
 }
 
-const PENDING_KEYS = Object.keys(state).filter((k) => k.startsWith("pending") && k !== "pendingRotation" && k !== "pendingTileOptions" && k !== "pendingCompanionTiles" && k !== "pendingTileDeck");
+const PENDING_KEYS = game.get("PENDING_INTERACTION_KEYS");
 
 function startNewGame() {
   if (!menu.on.size || !collKeys.some((k) => menu.on.has(k) && mapCounts[k])) {
@@ -234,7 +234,6 @@ function continueSavedGame() {
   try {
     // Parse inside the game's own sandbox so its arrays and objects are native there.
     call("deserializeState", game.get("JSON").parse(JSON.stringify(s.game)));
-    state.useDodge = !!(s.door && s.door.useDodge);
     state.gameActive = true;
     namePlayerOne();
     resetDoor();
@@ -254,8 +253,7 @@ function continueSavedGame() {
 // come back to the start of that turn. Each user has one save: one game at a time.
 const saveSig = () => `${state.turnNumber}|${state.currentPlayerIndex}`;
 const atTurnStart = () => phase === "game" && state.players.length && state.step === STEP.DRAW_TILE && !state.pendingTile &&
-  !call("hasPendingState") && !state.pendingDuctChoice && !state.pendingSewerTokenPlace && !state.pendingFrisbeeTarget &&
-  !state.zombieAnimationTimer;
+  !call("hasPendingState") && !state.zombieAnimationTimer;
 
 function autoSave() {
   if (phase !== "game") return false;
@@ -264,7 +262,7 @@ function autoSave() {
   const sig = saveSig();
   if (sig === lastSaveSig) return false;
   lastSaveSig = sig;
-  return saves.writeSave(SAVE_DIR, userName, { door: { useDodge: !!state.useDodge }, game: call("serializeState") });
+  return saves.writeSave(SAVE_DIR, userName, { game: call("serializeState") });
 }
 
 // ---- choosing where a drawn tile goes ------------------------------------------

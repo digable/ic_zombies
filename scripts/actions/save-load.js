@@ -32,17 +32,20 @@ function getAllEventCardDefs() {
   return all;
 }
 
+// Tile-placement bookkeeping that shares the "pending" prefix but isn't an interaction.
+// pendingTile itself IS an interaction and stays in the list.
+const PENDING_BOOKKEEPING_KEYS = new Set([
+  "pendingRotation", "pendingTileOptions", "pendingCompanionTiles", "pendingTileDeck"
+]);
+
+// Every state.pending* interaction, read from the initial state in core.js, so a new
+// pending field is guarded and cleared automatically — no list to keep in sync here.
+const PENDING_INTERACTION_KEYS = Object.keys(state).filter(
+  (k) => k.startsWith("pending") && !PENDING_BOOKKEEPING_KEYS.has(k)
+);
+
 function hasPendingState() {
-  return !!(
-    state.pendingCombatDecision  || state.pendingEventChoice     ||
-    state.pendingZombieReplace   || state.pendingZombieDiceChallenge ||
-    state.pendingZombiePlace     || state.pendingZombieMovement   ||
-    state.pendingForcedMove      || state.pendingBuildingSelect   ||
-    state.pendingDynamiteTarget  || state.pendingMinefield        ||
-    state.pendingRocketLauncher  || state.pendingTile             ||
-    state.pendingZombieFlood     ||
-    state.pendingBreakthrough    || state.pendingSpaceSelect
-  );
+  return PENDING_INTERACTION_KEYS.some((k) => !!state[k]);
 }
 
 function serializeState() {
@@ -88,7 +91,8 @@ function serializeState() {
     forcedNextOpponentId:    state.forcedNextOpponentId,
     useGuts:                 state.useGuts,
     useSewerTokens:          state.useSewerTokens,
-    sewerTokenSpaces:        Array.from(state.sewerTokenSpaces.entries()),
+    useDodge:                state.useDodge,
+    sewerTokenSpaces:       Array.from(state.sewerTokenSpaces.entries()),
     deckFilters:             state.deckFilters,
     eventDeckFilters:        state.eventDeckFilters ?? state.deckFilters,
     deckStartCounts:         state.deckStartCounts,
@@ -193,7 +197,8 @@ function deserializeState(data) {
   state.forcedNextOpponentId   = data.forcedNextOpponentId ?? null;
   state.useGuts                = data.useGuts ?? false;
   state.useSewerTokens         = data.useSewerTokens ?? false;
-  state.sewerTokenSpaces       = new Map(data.sewerTokenSpaces ?? []);
+  state.useDodge               = data.useDodge ?? false;
+  state.sewerTokenSpaces      = new Map(data.sewerTokenSpaces ?? []);
   state.deckFilters            = data.deckFilters;
   state.eventDeckFilters       = data.eventDeckFilters ?? data.deckFilters ?? {};
   state.deckStartCounts        = data.deckStartCounts;
@@ -206,26 +211,11 @@ function deserializeState(data) {
   state.gameActive = true;
 
   // Clear all pending / ephemeral state (save only possible when none were active)
-  state.pendingCombatDecision    = null;
-  state.pendingEventChoice       = null;
-  state.pendingZombieReplace     = null;
-  state.pendingZombieDiceChallenge = null;
-  state.pendingZombiePlace       = null;
-  state.pendingZombieMovement    = null;
-  state.pendingForcedMove        = null;
-  state.pendingBuildingSelect    = null;
-  state.pendingDynamiteTarget    = null;
-  state.pendingMinefield         = null;
-  state.pendingRocketLauncher    = null;
-  state.pendingZombieFlood       = null;
-  state.pendingDuctChoice        = null;
-  state.pendingTile              = null;
+  for (const k of PENDING_INTERACTION_KEYS) state[k] = null;
   state.pendingRotation          = 0;
   state.pendingTileOptions       = [];
   state.pendingCompanionTiles    = [];
   state.pendingTileDeck          = TILE_DECK.BASE;
-  state.pendingBreakthrough      = null;
-  state.pendingSpaceSelect       = null;
   state.selectedHandIndex        = null;
   state.lastCombatResult         = null;
   state.recentKillKey            = null;

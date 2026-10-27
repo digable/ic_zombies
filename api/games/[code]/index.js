@@ -6,6 +6,9 @@ const { checkRateLimit } = require("../../_rateLimit");
 const { cors, getIp, send, err } = require("../../_helpers");
 
 const MAX_STATE_BYTES = 200 * 1024;
+// Each waiting client polls every 1.5 s (40/min, see POLL_INTERVAL_MS in multiplayer.js).
+// In the lobby all 6 players poll, and they may share one home IP: 6 × 40 = 240/min.
+const POLLS_PER_MINUTE = 300;
 
 module.exports = async function handler(req, res) {
   cors(res);
@@ -20,7 +23,7 @@ module.exports = async function handler(req, res) {
     // GET — poll
     // -------------------------------------------------------------------------
     if (req.method === "GET") {
-      await checkRateLimit(ip, "poll", 120, 60);
+      await checkRateLimit(ip, "poll", POLLS_PER_MINUTE, 60);
 
       const session = await getSession(code);
       if (!session) return err(res, 404, "Game not found");
@@ -44,27 +47,36 @@ module.exports = async function handler(req, res) {
       return err(res, 413, "State payload too large");
     }
 
-    const session = await getSession(code);
-    if (!session) return err(res, 404, "Game not found");
-    if (session.status !== "playing") return err(res, 409, "Game is not in progress");
+    // Read and write in one transaction so a concurrent leave/join can't be overwritten
+    // by a state built from a stale player list.
+    const result = await db.transaction(async (q) => {
+      const session = await getSession(code, q);
+      if (!session) return { status: 404, error: "Game not found" };
+      if (session.status !== "playing") return { status: 409, error: "Game is not in progress" };
 
-    const playerInSession = session.players.find((p) => p.id === playerId);
-    if (!playerInSession) return err(res, 403, "Player not in this session");
+      const playerSlot = session.players.findIndex((p) => p.id === playerId);
+      if (playerSlot === -1) return { status: 403, error: "Player not in this session" };
 
-    const playerSlot = session.players.findIndex((p) => p.id === playerId);
-    const n = session.players.length;
-    // After endTurn the index is already advanced to the next player.
-    // Valid if: this player just finished their turn (previous slot) OR
-    // they took an extra turn (index unchanged — same slot).
-    const prevSlot = (gameState.currentPlayerIndex - 1 + n) % n;
-    if (playerSlot !== prevSlot && playerSlot !== gameState.currentPlayerIndex) {
-      return err(res, 403, "Not your turn");
-    }
+      // Whose turn it is comes from the state the server already has, never from the
+      // incoming state — otherwise any player could pass by sending their own slot + 1.
+      // The client pushes once at the end of its turn: the index either stays on the
+      // pusher (Cabin spell, extra turn) or advances to the next player.
+      const n = session.players.length;
+      const storedIndex = session.state?.currentPlayerIndex ?? 0;
+      const nextSlot = (playerSlot + 1) % n;
+      if (playerSlot !== storedIndex) return { status: 403, error: "Not your turn" };
+      if (gameState.currentPlayerIndex !== playerSlot && gameState.currentPlayerIndex !== nextSlot) {
+        return { status: 403, error: "Turn can only pass to the next player" };
+      }
 
-    await db.run(
-      "UPDATE sessions SET state = ?, last_activity_at = ? WHERE code = ?",
-      [stateJson, Date.now(), code]
-    );
+      await q.run(
+        "UPDATE sessions SET state = ?, last_activity_at = ? WHERE code = ?",
+        [stateJson, Date.now(), code]
+      );
+      return {};
+    });
+
+    if (result.error) return err(res, result.status, result.error);
     return send(res, 200, { ok: true });
 
   } catch (e) {
