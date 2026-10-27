@@ -46,9 +46,10 @@ started on the web and the other way round.
   and a lobby that lists everyone who joins. Press `Enter` to start once at least one other person is in.
 - **Join from the BBS:** IC Zombies, `o`, `j`, type the code, `Enter`.
 - **Join from the web:** `zombies.sodamachine.net/?game=CODE` (or the Join box on the site).
-- **Playing:** on your turn you play as usual. When you end your turn it goes to the server, and the next
-  player gets it (the BBS beeps and says "Your turn!"). While someone else is playing you can look around
-  the map (`m`) and at your own cards, but not act; the screen updates when their turn ends.
+- **Playing:** on your turn you play as usual. Everyone else watches it happen: each change (a tile, a
+  card, a roll, a move, the zombies) reaches the other BBS and web players within a couple of seconds, log
+  included. When you end your turn, the next player gets it (the BBS beeps and says "Your turn!"). While
+  someone else is playing you can look around the map (`m`) and at your own cards, but not act.
   Your hand is always your own cards, never anyone else's.
 - **Dropped or quit:** your seat is kept. Coming back to IC Zombies asks to rejoin (`c`) or leave the game
   for good (`l`). If it was your turn, you start that turn again (the server keeps the game as of the end

@@ -356,24 +356,27 @@ const plain = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);
   };
 }
 
-async function pushHandOff(actor) {
-  const mp = state.multiplayerSession;
-  const s = call("serializeState");
-  s.actingSlot = actor;
-  s.doorMidTurn = {
-    forcedMove: plain(state.pendingForcedMove), combat: plain(state.pendingCombatDecision),
-    combatMoveResume: state.combatMoveResume ?? null, combatZombiePhaseResume: state.combatZombiePhaseResume ?? null,
-    lastCombatResult: state.lastCombatResult ?? null
-  };
-  mp.lastStateKey = `${s.turnNumber}:${s.currentPlayerIndex}:${s.step}`;
-  try {
-    await api(`/api/games/${mp.code}`, { method: "POST", body: { playerId: mp.myPlayerId, gameState: s } });
-  } catch (e) {
-    notice = `couldn't pass the controls: ${errText(e)}`;
+// Every push from this door (live changes, hand-offs, end of turn) carries who has the controls,
+// plus any half-finished forced move or fight, so other BBS doors can show and continue it.
+game.ctx.decorateOnlinePush = (s) => {
+  s.actingSlot = actorSlot();
+  if (state.pendingForcedMove || state.pendingCombatDecision) {
+    s.doorMidTurn = {
+      forcedMove: plain(state.pendingForcedMove), combat: plain(state.pendingCombatDecision),
+      combatMoveResume: state.combatMoveResume ?? null, combatZombiePhaseResume: state.combatZombiePhaseResume ?? null,
+      lastCombatResult: state.lastCombatResult ?? null
+    };
   }
-  if (!state.multiplayerSession) return;
-  call("startPolling");   // listen for the controls coming back (onlineTick keeps it running)
-  scheduleDraw();
+};
+// The game's online code asks this before pushing or applying: do we have the controls?
+game.ctx.onlineCanAct = () => phase === "game" && online() && !waiting();
+
+function pushHandOff() {
+  call("queuePush", true).then(() => {
+    if (!state.multiplayerSession) return;
+    call("startPolling");   // listen for the controls coming back (onlineTick keeps it running)
+    scheduleDraw();
+  });
 }
 
 // After every action: if the controls just moved to another seat mid-turn, send the game there.
@@ -394,7 +397,7 @@ function onlineControls() {
     notice = `${ctl ? ctl.name : "they"} can't steer from the web; you move`;
     return;
   }
-  pushHandOff(actor);
+  pushHandOff();
 }
 
 function showLobby(info) {
@@ -500,7 +503,7 @@ function enterOnlineGame(session, info, alreadyLoaded = false) {
   state.multiplayerSession = {
     code: info.code, myPlayerId: info.playerId, myDeviceId: DEVICE_ID, myPlayerSlot: slot,
     isHost: !!info.isHost, hostId: info.hostId || null, mode: "online", pollInterval: null,
-    gameStarted: true, lastStateKey: `${st.turnNumber}:${st.currentPlayerIndex}:${st.step}`,
+    gameStarted: true, lastStateKey: call("stateKeyOf", st),
     lastPlayerCount: session.players.length
   };
   state.gameActive = true;
@@ -1136,6 +1139,7 @@ function scheduleDraw() {
       autoSave();
       onlineControls();
       onlineTick();
+      if (online()) call("scheduleLiveSync");
       startReplay();
       draw();
     } catch (e) {

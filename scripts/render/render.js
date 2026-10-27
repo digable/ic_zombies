@@ -187,4 +187,6 @@ function render() {
     const latest = state.logs.find((e) => e.type !== "quiet");
     if (latest) showMobileToast(latest.text);
   }
+  // Online: share this change with the other players (no-op offline or when it's not our move)
+  if (typeof scheduleLiveSync === "function") scheduleLiveSync();
 }

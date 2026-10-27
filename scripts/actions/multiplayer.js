@@ -6,6 +6,12 @@
 
 const POLL_INTERVAL_MS = 1500;
 const API_BASE = "/api/games";
+// Live sync: while you have the controls, every change (a card, a step, a zombie move) is pushed
+// to the server so everyone else's board and log follow along. Changes are bundled: a push goes
+// out LIVE_SYNC_DELAY_MS after things go quiet, and never closer than LIVE_SYNC_MIN_GAP_MS to the
+// last one (the server allows 60 pushes a minute; this stays under 40).
+const LIVE_SYNC_DELAY_MS = 600;
+const LIVE_SYNC_MIN_GAP_MS = 1500;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -16,6 +22,16 @@ function isOnlineMode() { return mpSession()?.mode === "online"; }
 function isMyTurn() {
   const mp = mpSession();
   return mp ? state.currentPlayerIndex === mp.myPlayerSlot : true;
+}
+// Whether this device has the controls right now. Normally that's "it's my turn"; the BBS door
+// overrides it (onlineCanAct) for moments when another player steers, e.g. Brain Cramp.
+function canActOnline() {
+  return typeof onlineCanAct === "function" ? !!onlineCanAct() : isMyTurn();
+}
+// Identifies one pushed state. syncSeq changes on every push, so mid-turn changes within the same
+// step still count as new.
+function stateKeyOf(s) {
+  return `${s.turnNumber}:${s.currentPlayerIndex}:${s.step}:${s.syncSeq || ""}`;
 }
 
 // Multiplayer DOM refs — cached on first access. Used by pollers and banner
@@ -158,7 +174,7 @@ async function pollFromCloud() {
     if (!session.state) return;
 
     const incoming = session.state;
-    const stateKey = `${incoming.turnNumber}:${incoming.currentPlayerIndex}:${incoming.step}`;
+    const stateKey = stateKeyOf(incoming);
 
     // First time seeing "playing" — close the lobby panel and jump to map
     if (!mp.gameStarted) {
@@ -173,6 +189,9 @@ async function pollFromCloud() {
       if (isMyTurn()) { stopPolling(); showMpTurnNotification(); }
       return;
     }
+
+    // While we have the controls our own copy is the newest; the server's may be a push behind.
+    if (canActOnline()) return;
 
     // Detect player departures — must happen before the stateKey check because
     // a non-current player leaving doesn't change turnNumber/currentPlayerIndex/step.
@@ -235,24 +254,63 @@ async function pollFromCloud() {
 }
 
 // ---------------------------------------------------------------------------
-// syncToCloud — called from endTurn() after state advances to next player
+// Pushing state: live sync while you play, and syncToCloud when the turn passes
 // ---------------------------------------------------------------------------
 
-async function syncToCloud() {
-  if (!isOnlineMode()) return;
+let _liveSyncTimer = null;
+let _lastPushAt = 0;
+
+// The state as it would be pushed, minus the parts that change on every call.
+function pushFingerprint(s) {
+  const { savedAt, syncSeq, ...rest } = s;
+  return JSON.stringify(rest);
+}
+
+// Pushes go one at a time, in order, so an older push can never land after a newer one.
+// The state is read when the push actually goes out, so it's always the latest.
+function queuePush(force = false) {
   const mp = mpSession();
-  try {
-    const serialized = serializeState();
+  if (!isOnlineMode() || !mp?.gameStarted) return Promise.resolve();
+  mp.pushChain = (mp.pushChain || Promise.resolve()).then(async () => {
+    if (!isOnlineMode()) return;
+    const s = serializeState();
+    if (typeof decorateOnlinePush === "function") decorateOnlinePush(s);
+    const fp = pushFingerprint(s);
+    if (!force && fp === mp.lastPushedFp) return;
+    s.syncSeq = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    mp.lastPushedFp = fp;
+    // Remember our own push so polling doesn't re-apply it
+    mp.lastStateKey = stateKeyOf(s);
+    _lastPushAt = Date.now();
     await apiFetch(`${API_BASE}/${mp.code}`, {
       method: "POST",
-      body: { playerId: mp.myPlayerId, gameState: serialized }
+      body: { playerId: mp.myPlayerId, gameState: s }
     });
-    // Update our own key so we don't re-apply our own push when polling resumes
-    mp.lastStateKey = `${serialized.turnNumber}:${serialized.currentPlayerIndex}:${serialized.step}`;
-    if (!isMyTurn()) startPolling();
-  } catch (e) {
-    console.warn("syncToCloud failed:", e.message);
-  }
+  }).catch((e) => console.warn("push failed:", e.message));
+  return mp.pushChain;
+}
+
+// Called after every render: if we have the controls, push the change shortly.
+function scheduleLiveSync() {
+  const mp = mpSession();
+  if (!isOnlineMode() || !mp?.gameStarted || !canActOnline() || _liveSyncTimer) return;
+  const wait = Math.max(LIVE_SYNC_DELAY_MS, _lastPushAt + LIVE_SYNC_MIN_GAP_MS - Date.now());
+  _liveSyncTimer = setTimeout(() => {
+    _liveSyncTimer = null;
+    if (!canActOnline()) return;
+    // Wait out zombie movement animations so others see where the zombies end up
+    if (state.zombieAnimationTimer) { scheduleLiveSync(); return; }
+    queuePush(false);
+  }, wait);
+}
+
+// syncToCloud — called from endTurn() (and the Cabin spell) once the turn has moved on
+async function syncToCloud() {
+  if (!isOnlineMode()) return;
+  clearTimeout(_liveSyncTimer);
+  _liveSyncTimer = null;
+  await queuePush(true);
+  if (!isMyTurn()) startPolling();
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +444,7 @@ async function startMultiplayerGame() {
     mp.lastPlayerCount = lobbyPlayers.length;
 
     const initialState = serializeState();
-    mp.lastStateKey = `${initialState.turnNumber}:${initialState.currentPlayerIndex}:${initialState.step}`;
+    mp.lastStateKey = stateKeyOf(initialState);
     mp.gameStarted = true;
 
     await apiFetch(`${API_BASE}/${mp.code}/start`, {
