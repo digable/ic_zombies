@@ -125,6 +125,7 @@ of the turn, zombies that moved sit on a red background.
 | brown `▒` | building interiors (purple `▒`: mall stores) |
 | yellow `+` in a wall | door |
 | `...` green `░` `:::` | road, grass, parking |
+| solid red | a space nobody can enter |
 | red outline, yellow walls / grey `░` | the drawn tile, previewed at the chosen spot / other spots it fits |
 | green spaces | spaces a card lets you pick |
 | grey `▓` with an `H` in the middle | the helipad (the way out) |

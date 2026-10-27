@@ -122,6 +122,7 @@ function drawMap(grid, game, state, center, extra = {}) {
   // Background of a space (buildings are shaded), used to join neighbouring building spaces.
   const bgAt = (sx, sy) => {
     const c = cellAt(game, state, sx, sy);
+    if (c && c.walkable === false) return C.red;
     return c ? (GROUND[c.type] || [0, 0, C.black])[2] : C.black;
   };
   const shared = (...bgs) => (bgs.every((b) => b === bgs[0]) ? bgs[0] : C.black);
@@ -164,6 +165,8 @@ function drawMap(grid, game, state, center, extra = {}) {
         continue;
       }
       let [fill, fg, bg] = GROUND[cell.type] || [".", C.dgrey, C.black];
+      // Spaces nobody can enter are solid red, so they don't pass for road.
+      if (cell.walkable === false) { fill = " "; fg = C.white; bg = C.red; }
       // The helipad (the way out) gets a pad texture with an H in the middle.
       const tileHere = inPreview(sx, sy) ? preview.tile : state.board.get(`${tileOf(sx)},${tileOf(sy)}`);
       const isPad = tileHere && tileHere.type === "helipad" && !cell.type;
@@ -468,7 +471,7 @@ function buildHelp() {
   sym([["▓", C.dgrey], ["H", C.white], ["Θ", C.grey]], "helipad (the exit), sewer token");
   sym([["─", C.grey], ["+", C.yellow], ["─", C.grey]], "wall with a door");
   sym([[".", C.dgrey], ["░", C.green], [":", C.grey]], "road, grass, parking");
-  sym([["≈", C.bblue, C.blue], ["τ", C.green]], "water, woods");
+  sym([["≈", C.bblue, C.blue], ["τ", C.green], [" ", C.white, C.red]], "water, woods, can't enter");
   sym([["─", C.yellow], ["─", C.yellow], ["─", C.yellow]], "tile you're placing");
   sym([["░", C.dgrey], ["░", C.dgrey], ["░", C.dgrey]], "other spots it fits");
   sym([[" ", C.white, C.blue], [" ", C.white, C.blue], [" ", C.white, C.blue]], "cursor (look around / pick)");
