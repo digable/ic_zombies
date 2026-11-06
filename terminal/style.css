@@ -1,0 +1,53 @@
+/* IC Zombies Terminal: the look of IC Disc Golf's emulator page. */
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+:root {
+  color-scheme: dark;
+  --bg: #0c0e13; --panel: #141821; --line: #262c39; --fg: #d5d9e2; --muted: #8b93a5;
+  --accent: #55ff55;   /* CGA bright green */
+  --bad: #ff5555;
+  --display: "VT323", "Courier New", monospace;
+  --ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+a { color: var(--accent); }
+kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; color: var(--fg); background: var(--panel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wrap { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header h1 { font-family: var(--display); font-weight: 400; font-size: 44px; line-height: 1; margin: 0; color: var(--accent); letter-spacing: .02em; }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 80ch; }
+
+.term { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.bezel { background: #000; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.titlebar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.titlebar b { color: var(--fg); font-weight: 500; }
+.screen { position: relative; }
+.screen canvas { display: block; width: 100%; height: auto; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.22) 3px, rgba(0,0,0,0) 4px); }
+
+.keys { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
+.key { font-family: var(--display); font-size: 26px; line-height: 1; padding: 10px 14px; min-width: 44px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.key.big { padding: 10px 30px; color: var(--accent); border-color: var(--accent); }
+.key:active { background: var(--accent); color: #000; }
+/* The phone keyboard: abc focuses this input so the phone's own keyboard comes up (16px stops iOS zooming) */
+.kb-in { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; font-size: 16px; }
+#kbBtn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+body.kb-open .keys .key:not(#kbBtn) { display: none; }
+body.kb-open #kbBtn { font-size: 20px; }
+
+.err { margin: 0; padding: 10px 12px; border: 1px solid var(--bad); border-radius: 4px; color: var(--bad); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .notes { grid-template-columns: minmax(0, 1fr); } }
+.notes div { border-top: 1px solid var(--line); padding-top: 10px; font-size: 13px; color: var(--muted); }
+.notes b { display: block; color: var(--fg); font-weight: 600; margin-bottom: 2px; }

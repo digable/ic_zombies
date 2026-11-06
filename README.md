@@ -15,6 +15,7 @@ A browser-based board game adaptation of zombie survival. Draw tiles to build th
 - **Isometric view** — toggle 3D perspective at any time; tilt/spin sliders, zoom (0.3×–3.0×), click-drag pan; pawns counter-rotate to always face the camera; zombie dogs render as a low dog silhouette
 - **Online multiplayer** — 4-character room codes, host-controlled start; live view: every change (tile, card, roll, move, zombie movement, log) reaches the other players within a couple of seconds; rejoining via invite link is always supported; rooms are deleted after 24 hours with no activity; BBS players can join the same rooms
 - **BBS / terminal edition** — `bbs/` runs the same game scripts in an 80×24 ANSI terminal as a Synchronet BBS door (also playable in any terminal with `node bbs/door.js --utf8`): hot-seat and online play with web players, per-user saves; see [`bbs/README.md`](bbs/README.md)
+- **Terminal version in the browser** — `terminal/` (`/terminal/` on the site) runs the BBS door itself in a browser tab on an emulated 80×24 ANSI screen: same game, online games shared with web and BBS players, saves kept in that browser; see [`terminal/README.md`](terminal/README.md)
 - **Combat** — d6 + bonuses; spend bullets or hearts to reroll/boost; weapon items; mid-movement combat resolves and resumes; knockout respawns you at the nearest start tile
 - **Zombie AI** — moves toward nearest player each phase; respects walls, doors, and connectors; government-enhanced zombies move 2 spaces; zombie dogs move 2 spaces, deal ½ heart damage, and can stack 2 per subtile; zombie clowns are zone-separated to Z7 tiles only and have a unique sprite and token
 - **Event cards** — draw up to 3 per turn, play one; includes player buffs, opponent disruption, zombie manipulation, and Book of the Dead page cards (Z4)
@@ -147,6 +148,7 @@ ic_zombies/
 │   ├── screen.js                     # Draws the 80×24 screen (map, sidebar, pop-ups)
 │   ├── ansi.js                       # ANSI / CP437 output, sends only changed cells
 │   └── saves.js                      # Per-user saves, one-game lock, online game marker
+├── terminal/                         # The BBS door in the browser, at /terminal/ (see terminal/README.md)
 ├── api/
 │   ├── _db.js                        # SQLite connection, schema (sessions, rate_limit_hits), query queue, room lifetime
 │   ├── _helpers.js                   # CORS, error helpers, code generator

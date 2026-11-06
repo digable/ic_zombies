@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="IC Zombies, terminal version: the BBS game played in your browser on an emulated ANSI screen.">
+<title>IC Zombies Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>IC Zombies Terminal</h1>
+    <p>The BBS version of IC Zombies, played here on an emulated 80×24 ANSI screen. It runs the real BBS
+      door and the same rules as the <a href="../">web version</a>, and online games are shared with both:
+      join a game from the website or the BBS with its 4-letter code. Your saved game stays in this browser.
+      On a phone, tap <kbd>abc</kbd> (or the screen) to type with your phone's keyboard.</p>
+  </header>
+
+  <section class="term" aria-label="Terminal">
+    <div class="bezel" id="bezel">
+      <div class="titlebar"><span><b>IC Zombies</b> · 80×24 · ANSI · CP437</span><span>same game as the bbs</span></div>
+      <div class="screen"><canvas id="screen" aria-label="Emulated 80 by 24 terminal"></canvas></div>
+    </div>
+    <div class="keys" role="group" aria-label="On-screen keys">
+      <button class="key" type="button" data-key="\u001b[D" aria-label="Left arrow">←</button>
+      <button class="key" type="button" data-key="\u001b[A" aria-label="Up arrow">↑</button>
+      <button class="key" type="button" data-key="\u001b[B" aria-label="Down arrow">↓</button>
+      <button class="key" type="button" data-key="\u001b[C" aria-label="Right arrow">→</button>
+      <button class="key big" type="button" data-key=" ">SPACE</button>
+      <button class="key" type="button" data-key="\r" aria-label="Enter">↵</button>
+      <button class="key" type="button" data-key="\t" aria-label="Tab, next space">TAB</button>
+      <button class="key" type="button" data-key="\u001b" aria-label="Escape">ESC</button>
+      <button class="key" type="button" data-key="?" aria-label="Help">?</button>
+      <button class="key" type="button" data-key="q" aria-label="Q, quit">Q</button>
+      <button class="key" id="kbBtn" type="button" aria-label="Open the keyboard to type any key">abc</button>
+      <input class="kb-in" id="kbIn" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="Type keys for the game">
+    </div>
+    <p class="err" id="err" hidden></p>
+  </section>
+
+  <section class="notes" aria-label="Controls">
+    <div><b>Playing</b>The keys for each step are shown at the bottom of the screen. <kbd>?</kbd> shows every key and what the map symbols mean.</div>
+    <div><b>Online</b>On the new-game screen, <kbd>o</kbd> then <kbd>h</kbd> hosts a game (you get a 4-letter code), or <kbd>j</kbd> joins one. Web and BBS players can join the same game.</div>
+    <div><b>Quitting</b>Press <kbd>q</kbd> twice. Your game picks up at the start of the turn you were on next time you open this page in this browser.</div>
+  </section>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
