@@ -21,6 +21,15 @@ const MAX_TITLE_CHARS        = 200;
 const MAX_DESCRIPTION_CHARS  = 5000;
 const MAX_ENVIRONMENT_CHARS  = 500;
 
+// Everything the reporter sends goes into the public issue inside a code block, which GitHub shows as
+// plain text: no @mentions (so no notifications), links, images or HTML. The fence is longer than any
+// run of backticks in the text, so the text can't close the block early and add markdown after it.
+function codeBlock(text, lang = "") {
+  const longest = (String(text).match(/`+/g) || []).reduce((n, run) => Math.max(n, run.length), 0);
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}${lang}\n${text}\n${fence}`;
+}
+
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -47,8 +56,10 @@ module.exports = async function handler(req, res) {
 
   let saveJson;
   let parsed;
+  let cleanBase64;   // the save re-encoded: Buffer.from skips anything that isn't base64, so the raw string could carry markdown
   try {
     const compressed = Buffer.from(compressedState, "base64");
+    cleanBase64 = compressed.toString("base64");
     const decompressed = await gunzipAsync(compressed, { maxOutputLength: MAX_DECOMPRESSED_BYTES });
     saveJson = decompressed.toString("utf8");
     parsed = JSON.parse(saveJson); // validate it's real JSON
@@ -65,16 +76,16 @@ module.exports = async function handler(req, res) {
   const descText = typeof description === "string" ? description.trim().slice(0, MAX_DESCRIPTION_CHARS) : "";
   const envText  = typeof environment === "string" ? environment.slice(0, MAX_ENVIRONMENT_CHARS) : "";
 
-  const descriptionSection = descText ? `## Description\n${descText}\n\n` : "";
+  const descriptionSection = descText ? `## Description\n${codeBlock(descText)}\n\n` : "";
   const logSection = logLines.length > 0
-    ? `## Game Log (last 20 entries)\n\`\`\`\n${logLines.join("\n")}\n\`\`\`\n\n`
+    ? `## Game Log (last 20 entries)\n${codeBlock(logLines.join("\n"))}\n\n`
     : "";
-  const envSection = envText ? `## Environment\n${envText}\n\n` : "";
+  const envSection = envText ? `## Environment\n${codeBlock(envText)}\n\n` : "";
   const header = `${descriptionSection}${logSection}${envSection}`;
 
   const jsonSaveSection =
     `## Save File\n<details>\n<summary>Click to expand — copy all text and save as a .json file, then import via Save/Load → Import</summary>\n\n` +
-    `\`\`\`json\n${saveJson}\n\`\`\`\n\n</details>`;
+    `${codeBlock(saveJson, "json")}\n\n</details>`;
 
   // Big games (many collections) produce saves larger than GitHub allows in an issue body.
   // Fall back to the compressed form, which is ~10x smaller, with instructions to restore it.
@@ -82,7 +93,7 @@ module.exports = async function handler(req, res) {
     `## Save File (compressed)\nThis save was too large to embed as JSON. ` +
     `Copy the text below into \`save.b64\`, then restore it with:\n\n` +
     `\`\`\`\nnode -e "process.stdout.write(require('zlib').gunzipSync(Buffer.from(require('fs').readFileSync('save.b64','utf8'),'base64')))" > save.json\n\`\`\`\n\n` +
-    `<details>\n<summary>Click to expand</summary>\n\n\`\`\`\n${compressedState}\n\`\`\`\n\n</details>`;
+    `<details>\n<summary>Click to expand</summary>\n\n${codeBlock(cleanBase64)}\n\n</details>`;
 
   let issueBody = header + jsonSaveSection;
   if (issueBody.length > GITHUB_MAX_BODY_CHARS) issueBody = header + compressedSaveSection;
